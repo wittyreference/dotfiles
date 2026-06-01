@@ -4,13 +4,13 @@ Why each non-default setting in `claude/settings.example.json` and the `claude-d
 
 ## Model selection
 
-### `"model": "claude-opus-4-7[1m]"`
+### `"model": "claude-opus-4-8[1m]"`
 
-Opus 4.7 is the latest and most capable Claude model as of mid-2026. The `[1m]` suffix opts into the 1M-token context window — needed for long sessions where the conversation history, semantic memory recall, skill index, and tool results all share the same budget. Without it, sessions that pull in even moderate codebase context start hitting the 200K cap by mid-afternoon.
+Opus 4.8 is the latest and most capable Claude model as of mid-2026. The `[1m]` suffix opts into the 1M-token context window — needed for long sessions where the conversation history, semantic memory recall, skill index, and tool results all share the same budget. Without it, sessions that pull in even moderate codebase context start hitting the 200K cap by mid-afternoon.
 
-### `"env": { "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-7" }`
+### `"env": { "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-8" }`
 
-Pins the Opus variant at the env-var level so any tool that resolves "opus" generically (some plugins, the Agent SDK) lands on 4.7 instead of an older snapshot. The Bedrock equivalent uses the regional prefix `us.anthropic.claude-opus-4-7`; switch via `CLAUDE_PROVIDER=bedrock claude-deepwork`.
+Pins the Opus variant at the env-var level so any tool that resolves "opus" generically (some plugins, the Agent SDK) lands on 4.8 instead of an older snapshot. The Bedrock equivalent uses the regional prefix `us.anthropic.claude-opus-4-8`; switch via `CLAUDE_PROVIDER=bedrock claude-deepwork`.
 
 ## Thinking and effort
 
@@ -24,7 +24,9 @@ Surfaces the model's reasoning trace in the UI. Useful for catching when the mod
 
 ### `"effortLevel": "xhigh"`
 
-Maximum reasoning depth tier. Pairs with `alwaysThinkingEnabled` — the latter says *whether* to think, this says *how much*. The `claude-deepwork` shell function bumps this further to `CLAUDE_CODE_EFFORT_LEVEL=max` via env var, which overrides settings.json for one-off "this session needs everything" launches.
+Maximum reasoning depth tier. Valid values: `low`, `medium`, `high`, `xhigh`. Pairs with `alwaysThinkingEnabled` — the latter says *whether* to think, this says *how much*. The `claude-deepwork` shell function bumps this further to `CLAUDE_CODE_EFFORT_LEVEL=max` via env var, which overrides settings.json for one-off "this session needs everything" launches.
+
+**Why pin it explicitly even when the model defaults to `high`:** Opus 4.8 ships with `effortLevel` defaulting to `high` out of the box (4.7 was lower). If you don't set this key, you get whatever the current model decides is reasonable. Pinning `xhigh` keeps the tier stable across model bumps — when 4.9 ships and changes its default again, this config doesn't drift.
 
 ## Context management
 

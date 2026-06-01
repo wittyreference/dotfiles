@@ -1,5 +1,5 @@
 {
-  "model": "claude-opus-4-7[1m]",
+  "model": "claude-opus-4-8[1m]",
   "alwaysThinkingEnabled": true,
   "showThinkingSummaries": true,
   "effortLevel": "xhigh",
@@ -13,7 +13,7 @@
   "skipDangerousModePermissionPrompt": true,
   "env": {
     "CLAUDE_CODE_PACKAGE_MANAGER_AUTO_UPDATE": "1",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-7"
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-8"
   },
   "permissions": {
     "allow": [

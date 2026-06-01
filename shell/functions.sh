@@ -166,10 +166,10 @@ claude-deepwork() {
     if [[ "${CLAUDE_PROVIDER:-anthropic}" == "bedrock" ]]; then
       unset ANTHROPIC_API_KEY
       export CLAUDE_CODE_USE_BEDROCK=1
-      export ANTHROPIC_DEFAULT_OPUS_MODEL='us.anthropic.claude-opus-4-7'
+      export ANTHROPIC_DEFAULT_OPUS_MODEL='us.anthropic.claude-opus-4-8'
       aws sts get-caller-identity >/dev/null 2>&1 || aws sso login
     else
-      export ANTHROPIC_DEFAULT_OPUS_MODEL='claude-opus-4-7'
+      export ANTHROPIC_DEFAULT_OPUS_MODEL='claude-opus-4-8'
     fi
 
     command claude "$@"
