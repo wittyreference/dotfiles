@@ -80,6 +80,18 @@ Wraps `claude` with the env vars that override settings.json for sessions where 
 
 Run subshelled `(...)` so the env vars don't leak into the parent shell after the session ends.
 
+## Troubleshooting: "I bumped the model but it reverts on restart"
+
+Claude Code reads settings from multiple layers in precedence order. On macOS managed devices (corporate laptops with MDM) the highest-precedence layer lives at `/Library/Application Support/ClaudeCode/managed-settings.json`, deployed by IT and owned by root. When that file pins `model` or `env.ANTHROPIC_DEFAULT_OPUS_MODEL`, **user-scope settings.json values are ignored on restart**.
+
+Default precedence is `first-wins` — managed beats user. Symptoms: `/model` switches the model live in the current session, but the next launch reverts to the managed value. Fixes:
+
+- **Live override only:** run `/model <id>` after launch. Doesn't persist.
+- **Per-session env override:** `ANTHROPIC_DEFAULT_OPUS_MODEL=<id> claude`. The `claude-deepwork` shell function does this. Wins because env vars beat both managed and user settings for variables.
+- **Durable fix:** ask IT to either (a) update the managed pin, or (b) set `"parentSettingsBehavior": "merge"` in `managed-settings.json` so user settings can override individual keys.
+
+Diagnose with: `cat /Library/Application\ Support/ClaudeCode/managed-settings.json` (read-only is fine, no sudo needed).
+
 ## What's intentionally NOT in the example settings
 
 - **`enabledPlugins`**: plugin enablement is per-machine and per-project. Listing them in the example would imply they're required.
