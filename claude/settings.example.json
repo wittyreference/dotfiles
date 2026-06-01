@@ -1,0 +1,28 @@
+{
+  "model": "claude-opus-4-7[1m]",
+  "alwaysThinkingEnabled": true,
+  "showThinkingSummaries": true,
+  "effortLevel": "xhigh",
+  "autoCompactEnabled": true,
+  "autoCompactWindow": 800000,
+  "cleanupPeriodDays": 90,
+  "skillListingMaxDescChars": 384,
+  "skillListingBudgetFraction": 0.01,
+  "preferredNotifChannel": "terminal_bell",
+  "voiceEnabled": true,
+  "skipDangerousModePermissionPrompt": true,
+  "env": {
+    "CLAUDE_CODE_PACKAGE_MANAGER_AUTO_UPDATE": "1",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-7"
+  },
+  "permissions": {
+    "allow": [
+      "WebFetch"
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "~/.claude/statusline.sh",
+    "padding": 0
+  }
+}
