@@ -13,6 +13,7 @@ Personal config snapshots for shell, tmux, and Claude Code. Curated for portabil
 | `docs/claude-config-rationale.md` | Why each non-default setting is set the way it is |
 | `CLAUDE.md` | Working agreement and coding standards (relationship framing, TDD, comment policy) |
 | `brainstorm.md` / `twilio-brainstorm.md` | Brainstorming prompt templates for new prototypes |
+| `LLM-PROMPTS.md` | PM concept-development prompts — idea → concept.md → PR-FAQ → PRD → tickets |
 
 ## Setup
 
