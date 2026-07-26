@@ -1,0 +1,14 @@
+# Build trees
+build/
+cmake-build-*/
+
+# PlatformIO
+.pio/
+
+# Flash dumps -- large, and a golden image is per-device, never shared
+*.bin
+*.bin.sha256
+
+# Device flash dumps: 16 MB, device-specific, never committed
+hardware-notes/*.bin
+hardware-notes/*.bin.sha256
