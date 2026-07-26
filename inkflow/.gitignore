@@ -1,0 +1,10 @@
+# Build trees
+build/
+cmake-build-*/
+
+# PlatformIO
+.pio/
+
+# Flash dumps -- large, and a golden image is per-device, never shared
+*.bin
+*.bin.sha256
