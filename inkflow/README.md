@@ -10,11 +10,31 @@ RSVP — rapid serial visual presentation — displays text one word or short ch
 
 | Component | What it is | State |
 |---|---|---|
-| `core/` | **`rsvp-core`** — the portable engine: tokenizer, pivot calculation, timing model. C++17, no dependencies, no dynamic allocation, no I/O | Tokenizer, pivot, and timing done and tested |
-| `tools/rsvp-mk/` | Host-side converter: EPUB / PDF / HTML / TXT → a compact `.rsvp` sidecar | Not started |
+| `core/` | **`rsvp-core`** — the portable engine: tokenizer, pivot calculation, timing model, playback state machine, `.rsvp` container. C++17, no dependencies, no dynamic allocation, no I/O | Done and tested |
+| `tools/rsvp-mk/` | Host-side converter: text / markdown → a compact `.rsvp` sidecar | Working for TXT and Markdown. EPUB, HTML, and PDF not started |
 | `bench/eink-bench/` | On-device harness measuring real SSD1677 refresh latency and power draw | Not started |
 | `sim/` | Desktop simulator for tuning speed and chunking without hardware | Not started |
 | `docs/PLATFORM-MATRIX.md` | Sourced capability matrix for the X4 and its firmware ecosystem | Done |
+
+## Try it
+
+```sh
+cmake -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build -j
+./build/tools/rsvp-mk/rsvp_mk docs/PLATFORM-MATRIX.md --wpm 400
+```
+
+```
+docs/PLATFORM-MATRIX.md -> docs/PLATFORM-MATRIX.rsvp
+  tokens    2835
+  text      16516 bytes
+  file      39228 bytes
+  markdown  stripped
+  at 400 wpm  8m 07s
+```
+
+The reading-time estimate comes from the real timing model, not from dividing words by WPM — boundary pauses and length bonuses make the honest figure noticeably longer.
+
+A sidecar runs roughly 2.4x the size of its source text (an 8-byte token record per word, plus the text verbatim). For a 500 KB book that is about 1.2 MB, which is nothing on the microSD card the X4 reads from.
 
 ## The design in one page
 
@@ -45,15 +65,17 @@ The build also produces `rsvp_core_freestanding`, which compiles the engine with
 
 What is true today:
 
-- The tokenizer, pivot calculation, and timing model are implemented and tested — 24 test cases, 68 assertions, green.
+- The engine is complete and tested: tokenizer with boundary classification, pivot calculation, timing model, playback state machine (pause, rewind-by-sentence, fingerprinted resume points), and the `.rsvp` container. **84 test cases, 386 assertions, plus 22 end-to-end CLI checks — all green.**
+- `rsvp-mk` converts text and Markdown to a `.rsvp` sidecar, and a test asserts the round trip plays back the original words in order through the real file format.
 - The engine compiles clean under `-Wall -Wextra -Wpedantic -Werror -Wconversion -Wsign-conversion -Wshadow -Wold-style-cast`, and separately with exceptions and RTTI disabled.
 
 What is **not** true yet, and will not be claimed until it is:
 
-- Nothing has run on an Xteink X4. No firmware, no integration, not once.
-- No refresh-latency or power-draw measurements exist. Every performance statement about achievable WPM in this repo is arithmetic, not observation.
-- There is no converter, no simulator, and no way to read an actual book with this.
-- The playback state machine — pause, rewind-by-sentence, resume — is designed but not built.
+- **Nothing has run on an Xteink X4. No firmware, no integration, not once.**
+- **No refresh-latency or power-draw measurements exist.** Every statement in this repo about achievable WPM is arithmetic, not observation. `TimingConfig::minHoldMs` currently defaults to 0 because nobody has measured what it should be.
+- There is no simulator, so nobody has *watched* this render a word.
+- EPUB, HTML, and PDF ingest are not implemented — only plain text and Markdown.
+- Markdown handling is a deliberately minimal line-oriented stripper, not a real parser. It handles headings, lists, blockquotes, emphasis, inline code, links, images, fenced code, and rules; anything more exotic passes through as text.
 
 ## Prior art and license hygiene
 
