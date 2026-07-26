@@ -5,6 +5,7 @@ add_library(rsvp_core STATIC
     src/tokenizer.cpp
     src/orp.cpp
     src/timing.cpp
+    src/player.cpp
 )
 
 target_include_directories(rsvp_core PUBLIC include)
@@ -27,6 +28,7 @@ add_executable(rsvp_core_tests
     tests/test_timing.cpp
     tests/test_token_flags.cpp
     tests/test_integration.cpp
+    tests/test_player.cpp
 )
 
 target_link_libraries(rsvp_core_tests PRIVATE rsvp_core)
@@ -47,6 +49,7 @@ add_library(rsvp_core_freestanding STATIC
     src/tokenizer.cpp
     src/orp.cpp
     src/timing.cpp
+    src/player.cpp
 )
 
 target_include_directories(rsvp_core_freestanding PUBLIC include)
