@@ -39,7 +39,7 @@ The measurement in `bench/eink-bench` still has to happen. But the target it has
 | Project | License | ★ | Stack | WPM | Chunking | ORP | Pause | **Rewind** | Resume | Notable |
 |---|---|---:|---|---|:-:|:-:|:-:|:-:|:-:|---|
 | [pasky/speedread](https://github.com/pasky/speedread) | **MIT** | 1300 | terminal | ±10% live | ○ | ● | ● | ○ | ○ | **Pause shows surrounding context.** Most-starred RSVP tool anywhere |
-| [karpushchenko/koreader-rsvp-plugin](https://github.com/karpushchenko/koreader-rsvp-plugin) ("FastReader") | **MIT** | 34 | Lua / KOReader | 50–1000 | ● **1–10 words** | ● crosshair | ● | **○ undocumented** | ● per-page | Closest prior art. Fixed-width widget so words don't jump |
+| [karpushchenko/koreader-rsvp-plugin](https://github.com/karpushchenko/koreader-rsvp-plugin) ("FastReader") | **MIT** | 34 | Lua / KOReader | 50–1000 | ● **1–10 words** | ● crosshair | ● | **○ undocumented** | ● per-page | Closest prior art. Fixed-width widget so words don't jump. Known limits: some PDFs have no extractable text; slows at high word counts |
 | [sami-29/speeedy](https://github.com/sami-29/speeedy) | **MIT** | 41 | TS / Lit / PWA | 100–1600 | ○ | ● adjustable pivot offset | ● | ○ | ● | **Comprehension quiz to set baseline WPM.** OpenDyslexic, Irlen overlays, RTL, click/ambient audio, streaks |
 | [the-happy-hippo/sprits-it](https://github.com/the-happy-hippo/sprits-it) | — | — | web | ● | ○ | ● | ● | **● rewind** | ○ | Mobile-browser focused, night mode |
 | [syniuhin/Readily](https://github.com/syniuhin/Readily) | — | — | Android | ● | ○ | ● | ● | ? | ● | Inspired by Spritzer |
@@ -49,6 +49,44 @@ The measurement in `bench/eink-bench` still has to happen. But the target it has
 | Kindle "Word Runner" · Reedy | proprietary | — | — | ● | ● | ● | ● | ● | ● | The commercial baselines users compare against |
 
 `?` means the README doesn't say. `○` means absent or undocumented.
+
+### Pivot and timing algorithms, compared concretely
+
+READMEs don't document these, so I read the source of the two MIT implementations. (Deliberately *not* the copyleft ones — see the rule at the top.) The numbers turn out to be the most useful thing in this survey.
+
+**Pivot banding — inkflow matches the field's most-used implementation exactly.**
+
+| Word length (chars) | [speedread](https://github.com/pasky/speedread) (MIT, 1.3k★) | [speeedy](https://github.com/sami-29/speeedy) (MIT) | **inkflow** |
+|---|:-:|:-:|:-:|
+| 1 | 0 | 0 | **0** |
+| 2–5 | 1 | 1 | **1** |
+| 6–9 | 2 | 2 | **2** |
+| 10–13 | 3 | 3 | **3** |
+| 14+ | 4 | **3** (capped) | **4** |
+
+speedread's table is `(0,0,1,1,1,1,2,2,2,2,3,3,3,3)[len]`, with 4 for `len > 13` — **identical to ours**, arrived at independently from published research rather than by copying. speeedy is the outlier in capping at 3, though it lets the user nudge the pivot to 4.
+
+**Timing weights — inkflow sits at the gentle end of a genuinely wide spread.**
+
+| | speedread | speeedy | **inkflow** |
+|---|:-:|:-:|:-:|
+| Base | `0.9 × 60/wpm` | `60000/wpm` | **`60000/wpm`** |
+| Sentence `.?!` | **×3.0** | ×2.0 | **×2.0** |
+| Clause `,;:` | ×2.0 | ×1.4 | **×1.5** |
+| Paragraph | — | separate multiplier | **×2.6** |
+| Word length | `0.04 × √len` | ≥8 chars → ×0.75 speed | **+3% per char over 5 (linear)** |
+| Short words | — | **×1.3 speed** (faster) | **no reduction** |
+| Numerals | — | — | **×1.3** |
+| Multi-word chunk | flat ×1.2 | **× chunkSize** | not yet implemented |
+| Global min / max hold | first word only, 0.2 s | **none** | **`minHoldMs` / `maxHoldMs`** |
+| Speed ramp | — | — | **yes, restarts on resume** |
+
+Four things fall out of this:
+
+1. **Our length model is the most aggressive of the three, and probably wrong.** speedread uses `√len` — diminishing returns — while we add a flat 3% per character indefinitely. At 20 characters we grant +45%; speedread grants roughly +9%. Square-root scaling is the more plausible shape and I'd change ours to match, except that changing a timing weight without measuring it just swaps one guess for another. **Filed as a real open question, not a bug.**
+2. **We deliberately differ on short words.** speeedy *accelerates* them by 1.3×; we explicitly refuse to shorten below base. That divergence is correct for our target and wrong for theirs: on e-paper a sub-refresh-interval hold cannot physically be drawn. Worth recording that the reasoning is hardware, not taste.
+3. **Chunk timing is unsettled in the field.** speeedy scales linearly with chunk size, speedread applies a flat ×1.2 regardless. These give wildly different results at 3 words. When we implement chunking, speeedy's is the defensible one.
+4. **Nobody else has a global refresh floor**, because nobody else targets e-ink. `minHoldMs` remains genuinely ours.
 
 ### The gap in the field
 
@@ -87,7 +125,15 @@ Feature comparison lives in [PLATFORM-MATRIX.md](PLATFORM-MATRIX.md) §3. This s
 
 `crosspoint-reader/crosspoint-reader` · `open-x4-epaper/community-sdk` · `open-x4-epaper/sample-firmware` · `CidVonHighwind/xteink-x4-sample` · `bigbag/papyrix-reader` · `Josh-writes/microslate-firmware` · `hansmrtn/pulp-os` · `dcherrera/CrossLuaReader` · `zakerytclarke/crosspoint-reader-apps` · `yattsu/biscuit` · `penk/X4Term` · `maddiedreese/xteink-terminal` · `maddiedreese/xteink-tamagotchi` · `trilwu/crosspet` · `Xatpy/send-to-x4` · `bigbag/epub-to-xtc-converter` · `thirteen37/calibre-xtc` · `varo6/xtcjs` · `tazua/cbz2xtc` · `bigbag/papyrix-flasher` · `crosspoint-reader/crosspoint-tools` · `crosspoint-reader/xteink-flasher` · `marginalia-os/marginalia-firmware` · `shakogegia/xtlibre` · `jtvargas/crosspoint-app`
 
-Most relevant: **CrossPoint** is the upstream target and the source of the EPUB pipeline, fonts, input, and power management we don't intend to rewrite. **pulp-os** is the reference for driving this exact chip bare-metal (`no_std` + Embassy) — Rust, so not directly reusable in C++, but its approach to the SSD1677 is informative and legally liftable.
+Two additions confirmed by direct license lookup, both of which change plans:
+
+**`psychoplath9450/SUMI` is MIT** — 174 stars, C, last pushed 2026-05-30. The survey previously listed its license as unstated. Its sandboxed Lua 5.4 app model is the zero-flash trial route for inkflow, and it is now confirmed legally clean to build against and lift from.
+
+**`uxjulia/crossink-simulator` is MIT** — C++, SDL2, 117 commits, actively pushed. **This is the desktop simulator I was about to write from scratch.** It compiles X4-family firmware natively and renders the e-paper panel in an SDL2 window, maps the physical buttons to keys (arrows, Return, Escape, P for power, S for sleep), maps a host directory onto the device's `/books/` SD path, and backs HTTP with the host's `curl` so sync actually works. It is tightly coupled to CrossInk and warns that upstream CrossPoint interface changes break it — so it is not a drop-in — but as MIT C++ it is both a working reference and directly liftable. Finding this is the single best argument for having done this reading before writing more code.
+
+Most relevant otherwise: **CrossPoint** is the upstream target and the source of the EPUB pipeline, fonts, input, and power management we don't intend to rewrite. **pulp-os** is the reference for driving this exact chip bare-metal (`no_std` + Embassy) — Rust, so not directly reusable in C++, but its approach to the SSD1677 is informative and legally liftable.
+
+**`jonmooreai/Crosspoint-Emulator` is confirmed to have no license** (42 stars, C++, last pushed 2026-02-11 and stale since). It stays in Tier 3 and we cannot use it — which matters much less now that an MIT simulator exists.
 
 ### Tier 2 — Copyleft. Study behaviour, reimplement independently
 
@@ -112,9 +158,17 @@ Two notes. `Crosspoint-Emulator`'s value to us is purely that **its existence pr
 
 ### Tier 4 — Unclear, resolve before use
 
-`ngxson/pluspoint-reader` (NOASSERTION) · `psychoplath9450/SUMI` (unstated) · `uxjulia/CrossInk` (unstated)
+`ngxson/pluspoint-reader` (NOASSERTION) · `uxjulia/crossink-fonts` and `uxjulia/crossink-dictionaries` (both no license) · the CrossInk forks below
 
-**CrossInk deserves a flag.** At ~648 stars it's one of the most popular alternative firmwares, and its focus is *typography and Bionic Reading* — making it the closest thing in this ecosystem to inkflow's problem space. Bionic Reading bolds word-openings to guide the eye, which is a different answer to the same question RSVP asks. Its license is unstated in what I could reach, so it's study-only for now, and its author (`uxjulia`) is the most relevant person in the ecosystem to talk to.
+### Correction: the CrossInk situation
+
+An earlier draft of this survey described CrossInk as "~648 stars, one of the most popular alternative firmwares." **That was wrong and I'm striking it.** The figure came from a secondary source this project had already flagged as possibly AI-generated, plus an HN comment that gave a conflicting repo path. I propagated it without checking.
+
+What's actually verifiable: **`uxjulia/CrossInk` does not exist as a public repository.** Searching every repo named `crossink` on GitHub returns ten results, none of them the upstream firmware. What survives is a ring of satellites and third-party forks — `samfoy/CrossInk` describes itself as a *"Standalone fork of uxjulia/CrossInk"*, alongside `at689/CrossInked`, `alpzoloto-sudo/Crossink`, `ProfessorRGB/ChromadyneCrossink`, `Sparkadium/crossink-almanac`, `MimiGapa/crossink-stats-forge` — all created June–July 2026, all at 0 stars.
+
+The most likely reading is that the upstream repo was deleted or made private recently and the forks outlived it. Either way, **there is no CrossInk repo to study, no star count to cite, and no license to resolve.** The Bionic Reading angle is still the closest prior art conceptually, and `uxjulia` is still worth talking to — but through the surviving forks or directly, not through a repo that isn't there.
+
+This is the second time an unreliable secondary source has cost something in this project. The lesson is already in the platform matrix's source warning; it now has a concrete example attached.
 
 ---
 
@@ -131,10 +185,26 @@ Not novelty for its own sake; these are the gaps the survey actually found.
 
 ---
 
-## Gaps in this survey
+## Upstream landscape
 
-- **Timing algorithm specifics are undocumented across the field.** Every README describes *that* it varies timing, none say *how*. Those details live in source I have deliberately not read for the copyleft projects, and have not yet read for the MIT ones. inkflow's model was derived from published reading research instead, which is the outcome the license rule was meant to produce.
-- **Licenses marked `—`** (`sprits-it`, `Readily`, `dashreader`, Streamer) are unconfirmed; treat them as Tier 3 until checked.
-- **KOReader issue #13206** — the primary RSVP discussion thread, and where maintainer objections would live — has not been read. Worth doing before proposing anything upstream.
-- **No project was actually run.** This is a documentation survey. The plan calls for flashing Papyrix, SUMI, microslate, pulp-os, and TernOS onto the X4 and *using* them, because twenty minutes of use tells you what a README cannot. That needs the device.
-- **`speeedy`'s comprehension quiz** is the one feature I'd most like to understand properly before dismissing or deferring it.
+**CrossPoint has zero RSVP issues.** A search of the repo returns nothing — nobody has asked for this. So an upstream PR would be introducing an idea, not joining a conversation, which makes opening an issue *before* building the integration considerably more important than it looked.
+
+**KOReader [#13206](https://github.com/koreader/koreader/issues/13206)** — open since 3 February 2025, labelled *Enhancement* and *User plugin available*. The requester wants word-by-word display, an optional focus indicator, adjustable WPM, adjustable font size and word count, and EPUB/plain-text support, citing Moon+ Reader as the model. **No maintainer objections are recorded** — no pushback on comprehension, refresh rate, or core-versus-plugin. The *User plugin available* label is the whole maintainer position: there's a community plugin, use that. [#13891](https://github.com/koreader/koreader/issues/13891) was closed as a duplicate of it.
+
+So the field has no documented technical objection to RSVP. That is mildly reassuring and also means nobody has seriously stress-tested the idea in public.
+
+## Gaps closed since the first draft
+
+- Pivot and timing algorithms for both MIT implementations — read and tabulated above.
+- SUMI, crossink-simulator, and Crosspoint-Emulator licenses — resolved.
+- KOReader #13206 and the CrossPoint upstream picture — read.
+- The CrossInk claim — checked, found wrong, corrected.
+
+## Gaps still open
+
+- **Licenses marked `—`** (`sprits-it`, `Readily`, `dashreader`, Streamer) remain unconfirmed. Treat as all-rights-reserved. They're low priority: we aren't lifting from any of them.
+- **Copyleft timing internals stay unread on purpose** (`tspreed` and others). Not a gap to close — that's the rule working.
+- **Panel dimensions conflict and need resolving on hardware.** `crossink-simulator`'s README gives the X4 as 792×1040 portrait and the X3 as 792×528 landscape. The [platform matrix](PLATFORM-MATRIX.md) has the X4 at 800×480 from Adafruit, corroborated independently by the arithmetic (800×480 over 4.26" ≈ 219 PPI, which matches every review). These cannot both be right. Chunk-width limits depend on it, so it needs a direct check — trivial once the device is in hand.
+- **No project has been run.** Still the biggest gap, and still needs hardware. Flashing Papyrix, SUMI, microslate, pulp-os, and TernOS and *using* them for twenty minutes each will teach more than every README combined.
+- **`speeedy`'s comprehension quiz** — still the feature I'd most like to understand before deferring it, given Part A makes "is this speed actually working for me?" the central question.
+- **Whether our linear length bonus should become square-root**, per the comparison above. Needs measurement, not a coin flip.

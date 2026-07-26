@@ -117,18 +117,20 @@ Legend: ● full · ◐ partial · ○ none · ? unverified
 |---|---|---:|---|:-:|:-:|---|:-:|:-:|:-:|:-:|---|---|
 | **crosspoint-reader** | **MIT** | 6488 | C/C++ | ● 2/3 + CSS | ● | XTC | ○ | ● | ○ | ● SD | KOReader, OPDS, WebDAV | **Best.** Parsing, fonts, input, power all solved. Active daily. Upstream target |
 | **papyrix-reader** | MIT | 427 | C | ● | ● | FB2 | ○ | **○ removed** | ○ | ● | — | Good code to learn from; **no OTA is disqualifying for locked units** |
-| **SUMI** | ? | — | C + Lua | ● | ● | — | **● Lua 5.4 sandbox** | ? | ○ | ● | StarDict dict | **Zero-flash trial target.** 46-fn API, 40 KB VM cap |
+| **SUMI** | **MIT** | 174 | C + Lua | ● | ● | — | **● Lua 5.4 sandbox** | ? | ○ | ● | StarDict dict | **Zero-flash trial target.** 46-fn API, 40 KB VM cap. License confirmed MIT |
 | **CrossLuaReader** | MIT | 35 | C + Lua | ◐ | ● | ZIP/XML/JSON | **● SD plugins** | ? | ○ | ● | — | Alternative plugin host. ~640 KB flash, ~380 KB RAM budget |
 | **microslate-firmware** | MIT | 121 | C | ◐ | ● | — | ○ | ? | ○ | ◐ | — | Deliberately minimal — a clean reference for "how little is enough" |
 | **pulp-os** | MIT | 122 | **Rust** | ◐ | ● | — | ○ | ? | ○ | ◐ | — | **The `no_std` + Embassy reference for this exact chip.** MIT, so liftable |
 | **TernOS** | **GPL-2.0** | 107 | Rust | ○ | ◐ | PalmOS apps | ● PalmOS | ? | **● desktop sim** | ◐ | — | Ideas only. Ships the simulator we need and can't take |
 | **TrustyReader** | **GPL-2.0** | 18 | Rust | ◐ | ● | — | ○ | ? | ○ | ◐ | — | Ideas only |
-| **CrossInk** | ? | ~648 | C/C++ | ● | ● | — | ○ | ? | ○ | ● | — | **Typography + Bionic Reading focus** — closest existing thing to our problem space |
+| ~~**CrossInk**~~ | — | — | C | — | — | — | — | — | — | — | — | ⚠️ **Upstream repo does not exist publicly.** See correction below |
 | **pluspoint-reader** | NOASSERTION | 28 | C | ◐ | ● | — | ○ | ? | ○ | ◐ | — | Resolve license before touching |
 | **biscuit** | MIT | ~360 | C | ○ | ○ | — | ◐ | ? | ○ | — | — | Dashboard/games — device-as-platform, not reading-first |
 | **Stock (XTOS)** | closed | — | C (ESP-IDF) | ● | ● | XTC/XTG/XTH | **○** | ● | ○ | ◐ | Wi-Fi transfer | Unusable — no third-party code, period |
 
 `?` in the OTA column is load-bearing: for a locked unit, **OTA support is the difference between reversible and permanent.** It's unverified for most of these because nobody documents it, which is itself a finding.
+
+> **Correction — CrossInk.** An earlier version of this table listed CrossInk at ~648 stars as one of the most popular alternative firmwares. That was wrong. The figure came from a secondary source this document already warns about, and I propagated it without checking. **`uxjulia/CrossInk` does not exist as a public repository** — a GitHub-wide search for repos named `crossink` returns ten results, none of them the upstream firmware. What remains is satellites (`crossink-fonts`, `crossink-dictionaries`, `crossink-simulator`) and third-party forks (`samfoy/CrossInk`, which calls itself a *"Standalone fork of uxjulia/CrossInk"*, plus `at689/CrossInked`, `alpzoloto-sudo/Crossink`, `ProfessorRGB/ChromadyneCrossink`), all created June–July 2026 at 0 stars. The upstream was most likely deleted or made private and the forks outlived it. See [`FEATURE-SURVEY.md`](FEATURE-SURVEY.md) for the full note.
 
 ### Non-reader firmware — precedent that arbitrary apps work
 
@@ -146,7 +148,8 @@ Legend: ● full · ◐ partial · ○ none · ? unverified
 | PlatformIO + Arduino-ESP32 / ESP-IDF | — | `riscv32-esp-elf` GCC | **Our toolchain** |
 | CircuitPython (Adafruit) | — | Python on the X4, with the canonical pinout guide | Fast prototyping / pinout truth |
 | Rust `no_std` (`riscv32imc-unknown-none-elf`, Embassy) | — | Proven by pulp-os and TernOS | Viable, but see below |
-| `jonmooreai/Crosspoint-Emulator` | **NO LICENSE** | Desktop emulator | **Cannot use.** Its existence is the useful signal; we write our own |
+| **`uxjulia/crossink-simulator`** | **MIT** | **SDL2 desktop simulator, C++, 117 commits.** Compiles firmware natively, renders the panel in an SDL2 window, maps buttons to keys, maps a host dir onto `/books/`, backs HTTP with the host's `curl` | **Use this.** Tightly coupled to CrossInk so not a drop-in, but MIT and the reference we'd otherwise have written |
+| `jonmooreai/Crosspoint-Emulator` | **NO LICENSE** (confirmed) | Desktop emulator, 42★, stale since 2026-02-11 | **Cannot use.** Matters less now that an MIT simulator exists |
 
 **Why C++17 and not Rust,** since Rust is genuinely well-supported here: the end target is an upstream PR into CrossPoint, which is C/C++ on PlatformIO, and community-sdk is C++. A Rust contribution to that codebase is a non-starter. The upstream distribution path is worth more than the language preference. `pulp-os` remains the reference for how to drive this hardware well, and being MIT we can lift from it even while re-expressing in C++.
 
@@ -204,7 +207,7 @@ Activity as of 2026-07-26 is **high and accelerating**. CrossPoint went 5,581★
 | Hacker News [48021901](https://news.ycombinator.com/item?id=48021901), [48048564](https://news.ycombinator.com/item?id=48048564) | Launch + unlocker discussion | High |
 | `r/xteinkereader` | Cited by one secondary source; **I could not confirm this subreddit exists** | **Low** |
 
-People worth knowing: **Dave Allie** (`@daveallie`) — CrossPoint creator/maintainer, and the person to talk to about upstreaming. **CrazyCoder** — the XTC format spec and `cr2xt`; the closest thing to a format reverse-engineer of record. **OvermindDL1** — the OTA unlocker. **uxjulia** — CrossInk, including Bionic Reading support, which makes them the most relevant person in the ecosystem to our problem. **hansmrtn** — pulp-os. **azw413** — TernOS. **psychoplath9450** — SUMI. **aimindseye** — the community wiki.
+People worth knowing: **Dave Allie** (`@daveallie`) — CrossPoint creator/maintainer, and the person to talk to about upstreaming. **CrazyCoder** — the XTC format spec and `cr2xt`; the closest thing to a format reverse-engineer of record. **OvermindDL1** — the OTA unlocker. **uxjulia** — author of the MIT `crossink-simulator` (the SDL desktop simulator), `auto-epub-optimizer`, and the CrossInk font and dictionary repos. Their CrossInk firmware, which focused on typography and Bionic Reading, is no longer public — but the simulator is, and it is the most directly useful artifact anyone in this ecosystem has published for our purposes. **hansmrtn** — pulp-os. **azw413** — TernOS. **psychoplath9450** — SUMI. **aimindseye** — the community wiki.
 
 Xteink publicly **partnered** with the CrossPoint project on 2026-06-21 after initially moving to block custom firmware — the vendor stopped fighting the modding scene and started referral-partnering with it. (Med/High confidence; the partnership is reported by CNX-Software and one ecosystem survey.)
 
@@ -231,3 +234,4 @@ Xteink publicly **partnered** with the CrossPoint project on 2026-06-21 after in
 - OTA support in most community firmwares — unverified, and it's the field that determines reversibility on locked units.
 - Whether `r/xteinkereader` exists.
 - **No measured SSD1677 refresh or power numbers exist anywhere.** This is the gap inkflow's `eink-bench` is built to close.
+- **Panel dimensions are in conflict and need checking on hardware.** This document says 800×480, from Adafruit and corroborated by arithmetic — 800×480 across 4.26" is ~219 PPI, matching every review. But `crossink-simulator`'s README gives the X4 as **792×1040 portrait** (and the X3 as 792×528 landscape). Both cannot be right. It matters, because the usable width caps how many characters fit in a chunk at a legible size. Resolving it takes ten seconds with the device in hand.
