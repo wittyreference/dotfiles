@@ -215,6 +215,8 @@ Xteink publicly **partnered** with the CrossPoint project on 2026-06-21 after in
 1. **The device is not the obstacle.** No secure boot, an always-reachable ROM bootloader, a published pinout, an MIT reference firmware with daily commits, a community SDK, and a cooperative vendor. Writing custom code for this thing is a solved problem.
 2. **RAM is the obstacle.** 380 KB with no PSRAM shapes every decision, and it's why book parsing happens on a laptop rather than on the device.
 3. **The open question is physics, not access.** Nobody in this ecosystem has published SSD1677 refresh-latency numbers for windowed partial updates, or power draw at sustained high refresh rates. RSVP at 300 WPM needs a word every 200 ms, and normal e-reading refreshes once every 30 seconds — a completely different duty cycle on a 650 mAh battery. **Measuring this is the first real engineering task, and the numbers are a contribution to the ecosystem regardless of whether inkflow ships.**
+
+   **Update after the feature survey:** the reading-comprehension literature puts the useful RSVP band at **250–350 WPM**, not the 600–900 this section was originally sized against — comprehension drops significantly above ~350. That means the requirement is **171–240 ms per update**, and two-word chunks at 300 WPM relax it to 400 ms. The measurement is still required, but the bar dropped by roughly 3x. See [`FEATURE-SURVEY.md`](FEATURE-SURVEY.md) Part A.
 4. **The reuse story is excellent and mostly permissive.** The large majority of the ecosystem is MIT. Only a handful of projects are copyleft or unlicensed, and those are read-for-ideas only — see `FEATURE-SURVEY.md` for the per-project boundary.
 
 ---
