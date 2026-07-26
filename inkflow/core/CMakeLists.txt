@@ -3,6 +3,7 @@
 
 add_library(rsvp_core STATIC
     src/tokenizer.cpp
+    src/orp.cpp
 )
 
 target_include_directories(rsvp_core PUBLIC include)
@@ -21,6 +22,7 @@ target_compile_options(rsvp_core PRIVATE
 add_executable(rsvp_core_tests
     tests/main.cpp
     tests/test_tokenizer.cpp
+    tests/test_orp.cpp
 )
 
 target_link_libraries(rsvp_core_tests PRIVATE rsvp_core)
@@ -39,6 +41,7 @@ add_test(NAME rsvp_core_tests COMMAND rsvp_core_tests)
 # where someone tries to flash it.
 add_library(rsvp_core_freestanding STATIC
     src/tokenizer.cpp
+    src/orp.cpp
 )
 
 target_include_directories(rsvp_core_freestanding PUBLIC include)
