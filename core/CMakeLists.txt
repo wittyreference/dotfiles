@@ -25,6 +25,8 @@ add_executable(rsvp_core_tests
     tests/test_tokenizer.cpp
     tests/test_orp.cpp
     tests/test_timing.cpp
+    tests/test_token_flags.cpp
+    tests/test_integration.cpp
 )
 
 target_link_libraries(rsvp_core_tests PRIVATE rsvp_core)
