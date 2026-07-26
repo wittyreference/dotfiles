@@ -15,6 +15,7 @@ RSVP — rapid serial visual presentation — displays text one word or short ch
 | `bench/eink-bench/` | On-device harness measuring real SSD1677 refresh latency and power draw | Not started |
 | `sim/` | Desktop simulator for tuning speed and chunking without hardware | Not started |
 | `docs/PLATFORM-MATRIX.md` | Sourced capability matrix for the X4 and its firmware ecosystem | Done |
+| `docs/FEATURE-SURVEY.md` | Feature survey of open-source RSVP readers and the X4 ecosystem, with the per-project license boundary and what the comprehension research says | Done |
 
 ## Try it
 
@@ -48,6 +49,12 @@ A sidecar runs roughly 2.4x the size of its source text (an 8-byte token record 
 - *800 px of width at a legible size fits about 10–14 characters.* Chunking two or three words together is the main lever for higher words-per-minute on a slow panel, but it collides with legibility on long words. So chunking is width-constrained, not word-count-constrained.
 
 **The open question is physics, not access.** Flashing the X4 is a solved problem. Whether the panel can redraw fast enough is not, and nobody in this ecosystem has published the numbers. RSVP at 300 WPM needs a word every 200 ms; normal e-reading refreshes once every 30 seconds. That is a completely different duty cycle on a 650 mAh battery, and it is why `eink-bench` exists and why `TimingConfig::minHoldMs` is a first-class field rather than an afterthought. Measurements will land here as named calibration constants citing the run that produced them.
+
+**Speed is not the point, and the research is clear about it.** Comprehension holds against normal reading at 250–350 WPM and drops significantly above that, with the worst damage to *inferential* comprehension — the kind that integrates across a whole argument. So inkflow targets that band and treats higher speeds as a knob rather than a goal. The honest benefit for ADHD is not that you read faster; it is that a fixed focal point removes the *place-keeping* load — no line tracking, no losing your position, no re-reading a paragraph because your attention drifted mid-line. See [`docs/FEATURE-SURVEY.md`](docs/FEATURE-SURVEY.md) for the evidence.
+
+That finding also makes the hardware question easier: 250–350 WPM means 171–240 ms per update rather than the ~100 ms a 600 WPM ambition would demand, and chunking two words at 300 WPM relaxes it to 400 ms. The measurement still has to happen — but the bar it has to clear dropped by roughly 3x, for a reason that came from reading research rather than wishful engineering.
+
+**Rewind is the feature, not a convenience.** Suppressing regressions — the backward glances that are 10–15% of normal reading time — measurably hurts comprehension, and it is the one thing RSVP inherently does. Almost nothing in the field implements a fix. That's why `rewindSentence()` walks backwards through successive presses instead of sticking.
 
 ## Building
 
