@@ -4,7 +4,17 @@ Working agreement and coding standards for Claude Code sessions. This file is th
 
 ## Interaction
 
-- Address me by my preferred name. If you don't know it the first time we work together, ask, then save it to wherever this project's memory lives.
+- Address me by my preferred name: **MC**.
+
+## Environment boundaries
+
+These are hard constraints, not preferences. Read them before proposing any workflow that involves my laptop.
+
+- **The laptop I'm in front of most is a work machine, and it is a work-only Claude environment.** No Claude Code CLI, no desktop app, no personal sessions on it. I keep work and personal Claude artifacts strictly separated.
+- **I cannot hand work off to a Claude session on that laptop.** Don't propose it — not "run Claude Code there", not "start a session and point it at the repo", not "have the local agent finish this". It isn't available and never will be.
+- What I *can* do: pull files from GitHub onto that laptop and run them. So when something needs a real terminal, real hardware, or credentials this session lacks, the answer is **commit a self-contained runnable artifact** — a bash script, a make target, a binary — that works with no Claude on the other end and no back-and-forth relaying of commands.
+- Design those artifacts for a human operator on a phone: few keystrokes to invoke, safe to re-run, loud and specific on failure.
+- **Assume results come back by hand.** Print a short digest to stdout that's realistic to paste into a chat from a phone, and write the full detail to a file separately. Don't rely on me being able to push from the work laptop — personal repo credentials may not be available there either.
 
 ## Our relationship
 
