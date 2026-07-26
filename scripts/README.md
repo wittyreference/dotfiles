@@ -6,18 +6,48 @@ reading instructions from a phone. So each one is a single short command to invo
 safe to re-run, and prints a compact digest that is realistic to paste into a chat
 from a phone. Full detail always goes to a file as well.
 
-## Getting them
+## Runbook
+
+Everything you need is here — you shouldn't have to consult a chat window while at
+the terminal.
+
+**1. Get the scripts.** Cloned to `/tmp` so nothing persists on the machine:
 
 ```sh
-git clone https://github.com/wittyreference/dotfiles.git
-cd dotfiles && git checkout claude/xteink-x4-rsvp-reader-212m18 && cd inkflow
+cd /tmp && git clone -q https://github.com/wittyreference/dotfiles.git w
+cd w && git checkout -q claude/xteink-x4-rsvp-reader-212m18 && cd inkflow
+pipx install esptool          # or: pip3 install esptool
 ```
 
-## Prerequisites
+**2. Plug the X4 in with a data USB-C cable**, then:
 
 ```sh
-pipx install esptool     # or: pip3 install esptool
+./scripts/00-probe.sh
 ```
+
+Read-only. Prints a short block between `--------- PASTE THIS ---------` markers.
+That block is the whole result — send it on. Full detail lands in `hardware-notes/`.
+
+**3. Only once the probe says the unit is unlocked:**
+
+```sh
+./scripts/01-backup.sh
+```
+
+Also read-only against the device. Prompts before starting, takes ~25 minutes, prints
+another short digest.
+
+**4. Copy the resulting `.bin` somewhere durable**, then clean up:
+
+```sh
+cp hardware-notes/x4-stock-golden-*.bin ~/somewhere-you-keep-things/
+cd /tmp && rm -rf w
+```
+
+The image is gitignored deliberately — 16 MB of device-specific firmware doesn't
+belong in a repo — so nothing moves it off that machine except you. **No public
+archive of a stock X4 image exists**, which makes this file the only restore path
+that is definitely yours.
 
 Nothing else for Phase 0. No USB driver is needed — the ESP32-C3's USB Serial/JTAG is
 native CDC-ACM, so macOS enumerates it without help. **Use a data USB-C cable**; a
