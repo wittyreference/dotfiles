@@ -6,48 +6,67 @@ reading instructions from a phone. So each one is a single short command to invo
 safe to re-run, and prints a compact digest that is realistic to paste into a chat
 from a phone. Full detail always goes to a file as well.
 
-## Runbook
+## How this works
 
-Everything you need is here — you shouldn't have to consult a chat window while at
-the terminal.
+The machine with the device attached has a terminal and git, and nothing else — no
+agent session, no copying output by hand. So results travel through the repository:
+each script writes its findings, commits them, and pushes. Whoever is working on the
+project reads them from GitHub.
 
-**1. Get the scripts.** Cloned to `/tmp` so nothing persists on the machine:
+**You run one command per step. The script publishes its own results.**
+
+## Setup, once
 
 ```sh
-cd /tmp && git clone -q https://github.com/wittyreference/dotfiles.git w
-cd w && git checkout -q claude/xteink-x4-rsvp-reader-212m18 && cd inkflow
+git clone https://github.com/wittyreference/dotfiles.git ~/inkflow
+cd ~/inkflow && git checkout claude/xteink-x4-rsvp-reader-212m18
 pipx install esptool          # or: pip3 install esptool
 ```
 
-**2. Plug the X4 in with a data USB-C cable**, then:
+Push access to the repo is what closes the loop. If this machine can't push, the
+scripts still work and still print a short digest — see *If pushing fails* below.
+
+## Each session
 
 ```sh
-./scripts/00-probe.sh
+cd ~/inkflow && git pull
 ```
 
-Read-only. Prints a short block between `--------- PASTE THIS ---------` markers.
-That block is the whole result — send it on. Full detail lands in `hardware-notes/`.
+**Step 1 — probe.** Plug the X4 in with a **data** USB-C cable, then:
 
-**3. Only once the probe says the unit is unlocked:**
+```sh
+cd inkflow && ./scripts/00-probe.sh
+```
+
+Read-only. Detects the port, reads chip, flash and eFuse state, writes a report, and
+pushes it. Takes seconds.
+
+**Step 2 — golden backup.** Only once the probe confirms the unit is *unlocked*:
 
 ```sh
 ./scripts/01-backup.sh
 ```
 
-Also read-only against the device. Prompts before starting, takes ~25 minutes, prints
-another short digest.
+Also read-only against the device. Prompts first, takes ~25 minutes, then pushes the
+manifest.
 
-**4. Copy the resulting `.bin` somewhere durable**, then clean up:
+**Step 3 — keep the image.** The `.bin` is gitignored deliberately: 16 MB of
+device-specific firmware doesn't belong in a repo. Nothing moves it off that machine
+except you, and **no public archive of a stock X4 image exists**, so this file is the
+only restore path that is definitely yours.
 
 ```sh
-cp hardware-notes/x4-stock-golden-*.bin ~/somewhere-you-keep-things/
-cd /tmp && rm -rf w
+cp hardware-notes/x4-stock-golden-*.bin ~/somewhere-durable/
 ```
 
-The image is gitignored deliberately — 16 MB of device-specific firmware doesn't
-belong in a repo — so nothing moves it off that machine except you. **No public
-archive of a stock X4 image exists**, which makes this file the only restore path
-that is definitely yours.
+## If pushing fails
+
+Every script also prints a compact block between `--------- PASTE THIS ---------`
+markers, sized to be pasted from a phone. That's the fallback, not the primary path.
+`./scripts/push-results.sh` can be re-run on its own once credentials are sorted —
+nothing is lost, the reports sit in `hardware-notes/` either way.
+
+Set `NO_PUSH=1` to skip publishing entirely.
 
 Nothing else for Phase 0. No USB driver is needed — the ESP32-C3's USB Serial/JTAG is
 native CDC-ACM, so macOS enumerates it without help. **Use a data USB-C cable**; a

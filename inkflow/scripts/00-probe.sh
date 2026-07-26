@@ -11,14 +11,25 @@ set -uo pipefail
 # Usage:  ./scripts/00-probe.sh            auto-detect the port
 #         PORT=/dev/cu.usbmodem1101 ./scripts/00-probe.sh
 
-cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)" || exit 1
+INKFLOW_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$INKFLOW_DIR" || exit 1
 
 OUT_DIR="hardware-notes"
 mkdir -p "$OUT_DIR"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 REPORT="$OUT_DIR/probe-$STAMP.md"
 EFUSE_TMP="$(mktemp)"
-trap 'rm -f "$EFUSE_TMP"' EXIT
+
+# Publish on every exit path, including the early ones. "No port found" is a result
+# worth having in the repo, not just a reason to stop -- and the whole point of this
+# setup is that nobody transcribes output by hand.
+publish() {
+    [ "${NO_PUSH:-0}" = "1" ] && return 0
+    [ -x "$INKFLOW_DIR/scripts/push-results.sh" ] || return 0
+    echo
+    "$INKFLOW_DIR/scripts/push-results.sh" || true
+}
+trap 'rm -f "$EFUSE_TMP"; publish' EXIT
 
 log() { printf '%s\n' "$*" >> "$REPORT"; }
 

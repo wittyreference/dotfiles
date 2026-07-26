@@ -13,7 +13,18 @@ set -uo pipefail
 # Usage:  ./scripts/01-backup.sh
 #         PORT=/dev/cu.usbmodem1101 ./scripts/01-backup.sh
 
-cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)" || exit 1
+INKFLOW_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$INKFLOW_DIR" || exit 1
+
+# Publish the manifest on the way out, whatever happened. The image itself stays
+# local and gitignored; only the checksum and metadata travel.
+publish() {
+    [ "${NO_PUSH:-0}" = "1" ] && return 0
+    [ -x "$INKFLOW_DIR/scripts/push-results.sh" ] || return 0
+    echo
+    "$INKFLOW_DIR/scripts/push-results.sh" || true
+}
+trap 'publish' EXIT
 
 OUT_DIR="hardware-notes"
 mkdir -p "$OUT_DIR"
