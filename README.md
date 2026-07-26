@@ -11,6 +11,7 @@ Personal config snapshots for shell, tmux, and Claude Code. Curated for portabil
 | `claude/statusline.sh` | `ccstatusline` wrapper that warns when CWD is outside the canonical work tree |
 | `claude/ccstatusline-lite.json` | Portable 2-line statusline layout (no project-specific custom-command segments) |
 | `docs/claude-config-rationale.md` | Why each non-default setting is set the way it is |
+| `docs/kindle-epub-pdf-conversion.md` | Field guide: getting EPUB/PDF copies of licensed Kindle books (legal reality + the technical route) |
 | `CLAUDE.md` | Working agreement and coding standards (relationship framing, TDD, comment policy) |
 | `brainstorm.md` / `twilio-brainstorm.md` | Brainstorming prompt templates for new prototypes |
 | `LLM-PROMPTS.md` | PM concept-development prompts — idea → concept.md → PR-FAQ → PRD → tickets |
