@@ -6,6 +6,8 @@ add_library(rsvp_core STATIC
     src/orp.cpp
     src/timing.cpp
     src/player.cpp
+    src/fingerprint.cpp
+    src/format.cpp
 )
 
 target_include_directories(rsvp_core PUBLIC include)
@@ -29,6 +31,7 @@ add_executable(rsvp_core_tests
     tests/test_token_flags.cpp
     tests/test_integration.cpp
     tests/test_player.cpp
+    tests/test_format.cpp
 )
 
 target_link_libraries(rsvp_core_tests PRIVATE rsvp_core)
@@ -50,6 +53,8 @@ add_library(rsvp_core_freestanding STATIC
     src/orp.cpp
     src/timing.cpp
     src/player.cpp
+    src/fingerprint.cpp
+    src/format.cpp
 )
 
 target_include_directories(rsvp_core_freestanding PUBLIC include)
