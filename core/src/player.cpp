@@ -3,43 +3,11 @@
 
 #include "rsvp/player.hpp"
 
+#include "rsvp/fingerprint.hpp"
+
 namespace rsvp {
-namespace {
-
-constexpr std::uint32_t kFnvOffsetBasis = 2166136261u;
-constexpr std::uint32_t kFnvPrime = 16777619u;
-
-void hashMix(std::uint32_t& hash, std::uint32_t value) noexcept {
-    for (unsigned shift = 0u; shift < 32u; shift += 8u) {
-        hash ^= (value >> shift) & 0xFFu;
-        hash *= kFnvPrime;
-    }
-}
-
-/// Cheap, deterministic fingerprint of a token array.
-///
-/// Samples three tokens rather than hashing all of them: this runs on every
-/// resume-point save, and a book is hundreds of thousands of tokens. It only has
-/// to answer "is this the same document?", not resist an adversary -- the failure
-/// it prevents is dropping a reader into a random paragraph of the wrong book,
-/// which any of these samples catches.
-std::uint32_t fingerprint(const Token* tokens, std::uint32_t count) noexcept {
-    std::uint32_t hash = kFnvOffsetBasis;
-    hashMix(hash, count);
-
-    if (tokens != nullptr && count > 0u) {
-        const std::uint32_t samples[3] = {0u, count / 2u, count - 1u};
-        for (const std::uint32_t index : samples) {
-            hashMix(hash, tokens[index].offset);
-            hashMix(hash, static_cast<std::uint32_t>(tokens[index].length));
-            hashMix(hash, static_cast<std::uint32_t>(tokens[index].orp));
-            hashMix(hash, static_cast<std::uint32_t>(tokens[index].flags));
-        }
-    }
-    return hash;
-}
-
-}  // namespace
+// Fingerprinting lives in fingerprint.hpp so the .rsvp writer and the player
+// cannot drift apart on what identifies a document.
 
 Player::Player(const Token* tokens, std::uint32_t count, const TimingConfig& config) noexcept
     : tokens_(tokens),
@@ -148,14 +116,14 @@ std::uint32_t Player::remainingMs() const noexcept {
 }
 
 ResumePoint Player::resumePoint() const noexcept {
-    return ResumePoint{index_, fingerprint(tokens_, count_)};
+    return ResumePoint{index_, documentFingerprint(tokens_, count_)};
 }
 
 bool Player::restore(const ResumePoint& point) noexcept {
     if (count_ == 0u || point.tokenIndex >= count_) {
         return false;
     }
-    if (point.documentId != fingerprint(tokens_, count_)) {
+    if (point.documentId != documentFingerprint(tokens_, count_)) {
         return false;
     }
 
