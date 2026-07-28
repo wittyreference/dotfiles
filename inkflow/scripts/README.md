@@ -19,17 +19,21 @@ project reads them from GitHub.
 
 ```sh
 git clone https://github.com/wittyreference/dotfiles.git ~/inkflow
-cd ~/inkflow && git checkout claude/xteink-x4-rsvp-reader-212m18
 pipx install esptool          # or: pip3 install esptool
 ```
 
-Push access to the repo is what closes the loop. If this machine can't push, the
-scripts still work and still print a short digest — see *If pushing fails* below.
+`main` is fine to sit on — the scripts move their own results onto a `hw-results`
+branch rather than committing to the default branch, so you never have to think about
+branch hygiene while standing at a bench with hardware plugged in. Review and merge
+that branch like any other change.
+
+Push access is what closes the loop. If this machine can't push, the scripts still
+work and still print a short digest — see *If pushing fails* below.
 
 ## Each session
 
 ```sh
-cd ~/inkflow && git pull
+cd ~/inkflow && git checkout main && git pull
 ```
 
 **Step 1 — probe.** Plug the X4 in with a **data** USB-C cable, then:

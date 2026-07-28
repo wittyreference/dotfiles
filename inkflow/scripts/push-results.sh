@@ -19,12 +19,25 @@ REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
 }
 cd "$REPO_ROOT" || exit 1
 
+RESULTS_BRANCH="${RESULTS_BRANCH:-hw-results}"
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+
+# Device results never land directly on the default branch -- they go to a results
+# branch that can be reviewed and merged like anything else. Switching automatically
+# rather than refusing, because the operator should not have to think about branch
+# hygiene while standing at a bench with hardware plugged in.
 if [ "$BRANCH" = "main" ] || [ "$BRANCH" = "master" ]; then
-    echo "Refusing to commit results onto $BRANCH."
-    echo "Check out the working branch first:"
-    echo "    git checkout claude/xteink-x4-rsvp-reader-212m18"
-    exit 1
+    echo "On $BRANCH -- moving results to the '$RESULTS_BRANCH' branch."
+    if git show-ref --verify --quiet "refs/heads/$RESULTS_BRANCH"; then
+        git checkout -q "$RESULTS_BRANCH" || exit 1
+    elif git ls-remote --exit-code --heads origin "$RESULTS_BRANCH" >/dev/null 2>&1; then
+        git fetch -q origin "$RESULTS_BRANCH" || true
+        git checkout -q -b "$RESULTS_BRANCH" "origin/$RESULTS_BRANCH" || exit 1
+    else
+        git checkout -q -b "$RESULTS_BRANCH" || exit 1
+    fi
+    BRANCH="$RESULTS_BRANCH"
+    echo
 fi
 
 NOTES="inkflow/hardware-notes"
