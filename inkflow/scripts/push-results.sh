@@ -72,10 +72,17 @@ echo "Committed. Syncing with the remote..."
 git pull --rebase --quiet origin "$BRANCH" 2>/dev/null || true
 
 for attempt in 1 2 3; do
-    if git push --quiet origin "$BRANCH"; then
+    # -u sets upstream tracking. Without it a freshly created results branch has no
+    # remote configured, and the operator's next plain `git pull` fails with "no
+    # tracking information" -- on a branch they never chose, because this script put
+    # them there.
+    if git push --quiet -u origin "$BRANCH"; then
         echo
         echo "Pushed to origin/$BRANCH."
         echo "Results are now readable from the repo -- no copying needed."
+        echo
+        echo "You are now on '$BRANCH'. Back to the default branch with:"
+        echo "    git checkout main && git pull"
         exit 0
     fi
     echo "Push attempt $attempt failed; retrying..."
