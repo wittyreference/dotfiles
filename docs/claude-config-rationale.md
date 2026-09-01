@@ -64,9 +64,21 @@ Skips the "are you sure you want dangerous mode" confirmation. Only set this if 
 
 ## Statusline
 
-### `"statusLine.command": "~/.claude/statusline.sh"`
+### `"statusLine.command": "CANONICAL_REPO=$HOME/your-primary-repo ~/.claude/statusline.sh"`
 
-A wrapper around `ccstatusline` that prepends a yellow warning when the CWD is outside the canonical work tree. Catches the failure mode where you start a session in `~` instead of inside a repo and don't notice for 20 minutes. Configure the canonical path via the `CANONICAL_REPO` env var or edit the script.
+A wrapper around `ccstatusline` that prepends a yellow warning when the CWD is outside the canonical work tree. Catches the failure mode where you start a session in `~` instead of inside a repo and don't notice for 20 minutes.
+
+The chain is four separate pieces — the npm package, the wrapper, the layout, and the settings key — and three of them fail quietly. In the order you hit them on a fresh machine:
+
+**`ccstatusline` is its own install; the wrapper is not the tool.** `statusline.sh` prefers a global `ccstatusline`, falls back to a pinned fnm path, and last resorts to `npx -y ccstatusline@latest`. That final fallback is the trap precisely because it *works*: nothing errors, but the package is re-resolved from the registry on every render. On a Raspberry Pi 4 the lag is plainly visible; on a fast laptop you can pay it for months without noticing. `npm i -g ccstatusline` removes it from the path. The package is pure JS (`bin: dist/ccstatusline.js`, `engines: node >=14`), so there is no native-binary story on aarch64.
+
+**`CANONICAL_REPO` defaults to a path that exists on one machine.** Unset, the script falls back to `$HOME/workspaces/internal-factory`. Anywhere that directory is absent, no CWD can ever match it, so the ⚠ line fires in *every* session — which teaches you to ignore the warning, the exact inverse of what it is for. Set it per machine in the settings command string; the `VAR=value cmd` prefix works because Claude Code runs the statusline command through a shell.
+
+**A missing `statusLine` key is indistinguishable from a working setup that renders nothing.** Wrapper installed, layout installed, binary on PATH, no key in `~/.claude/settings.json`: no error, no statusline. Adding the key does *not* need a restart — Claude Code reloads settings on save and re-runs a changed `command` immediately, skipping its usual 300ms debounce. The other silent blank is workspace trust: `statusLine` runs a shell command, so it is gated by the same trust rule as hooks in settings files, and until the folder is trusted `claude --debug` logs `Status line command skipped: workspace trust not accepted`.
+
+One knob the lite layout wants that the example settings don't set: `refreshInterval`. Updates are event-driven by default, so the `block-timer` and `session-cost` segments freeze whenever the main session goes idle — waiting on background subagents, most visibly. `"refreshInterval": 30` re-runs the command on a timer as well; size it off your slowest-changing segment rather than reflexively picking a small number — `block-timer` renders whole minutes, so a 30-second tick is already twice as often as the display can show. It is off by default here because every tick is a process spawn, which is also why the `npx` fallback above matters: Claude Code cancels an in-flight statusline script when the next update arrives, so a slow one can be killed before it ever prints.
+
+Because none of the three announce themselves, verify by hand rather than by restarting and squinting — the wrapper takes the same JSON on stdin that Claude Code sends it. `cwd` drives the ⚠ check, and the context-bar segment needs a real `transcript_path` to have anything to measure (omit it and the segment simply doesn't render, which is not a fault).
 
 ## Deep-work launcher
 

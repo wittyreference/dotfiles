@@ -24,17 +24,38 @@ gh repo clone wittyreference/dotfiles ~/dotfiles
 # 2. Source the shell functions from your ~/.zshrc
 echo '[ -f ~/dotfiles/shell/functions.sh ] && source ~/dotfiles/shell/functions.sh' >> ~/.zshrc
 
-# 3. Install Claude statusline wrapper
+# 3. Install ccstatusline itself — the wrapper is not the tool
+#    Pure JS, no native binary, so aarch64 (Raspberry Pi) needs nothing special.
+npm install -g ccstatusline
+
+# 4. Install Claude statusline wrapper
 cp ~/dotfiles/claude/statusline.sh ~/.claude/statusline.sh
 chmod +x ~/.claude/statusline.sh
 
-# 4. Install ccstatusline layout
+# 5. Install ccstatusline layout
 mkdir -p ~/.config/ccstatusline
 cp ~/dotfiles/claude/ccstatusline-lite.json ~/.config/ccstatusline/settings.json
 
-# 5. Merge desired keys from settings.example.json into ~/.claude/settings.json
+# 6. Merge desired keys from settings.example.json into ~/.claude/settings.json
 #    (don't overwrite — your existing file has plugin enablements you want to keep)
+#    Two statusline-specific edits, both silent when wrong:
+#      - without the `statusLine` key there is no error, just no statusline
+#      - set CANONICAL_REPO to THIS machine's primary tree, or the ⚠ fires every session
+#    "statusLine": {
+#      "type": "command",
+#      "command": "CANONICAL_REPO=$HOME/your-primary-repo ~/.claude/statusline.sh",
+#      "padding": 0
+#    }
+
+# 7. Verify the whole chain without restarting Claude
+#    The wrapper reads the same JSON Claude Code sends it on stdin.
+echo "{\"cwd\":\"$PWD\",\"model\":{\"display_name\":\"Opus\"},\"workspace\":{\"current_dir\":\"$PWD\"},\"cost\":{\"total_cost_usd\":0,\"total_duration_ms\":0,\"total_lines_added\":0,\"total_lines_removed\":0}}" \
+  | CANONICAL_REPO=$HOME/your-primary-repo ~/.claude/statusline.sh
 ```
+
+Step 7 prints the ⚠ line until you replace `your-primary-repo` — that *is* the check working.
+Settings reload on save, so step 6 takes effect without restarting Claude. If the line stays blank anyway,
+the folder is probably untrusted — `claude --debug` logs `Status line command skipped: workspace trust not accepted`.
 
 ## Reading order for a new machine
 

@@ -22,7 +22,7 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "~/.claude/statusline.sh",
+    "command": "CANONICAL_REPO=$HOME/your-primary-repo ~/.claude/statusline.sh",
     "padding": 0
   }
 }
