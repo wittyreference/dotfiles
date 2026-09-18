@@ -4,13 +4,14 @@ The RSVP reader itself, running on an Xteink X4.
 
 ## Reading material
 
-Drop a `.txt` file at the root of the microSD card. The firmware loads the first one it
-finds. With no card, or no `.txt` on it, it plays a short built-in passage so the device
-is never a blank screen.
+Drop a `.rsvp` sidecar or a `.txt` file at the root of the microSD card. The firmware
+prefers the first `.rsvp` it finds and falls back to the first `.txt`. With no card, or
+neither on it, it plays a short built-in passage so the device is never a blank screen.
 
-Limits are deliberately modest — **48 KB of text, 6000 tokens**, roughly half an hour of
-reading. The device has 400 KB of SRAM with no PSRAM, and the framebuffer alone costs
-48 KB.
+A `.txt` is tokenised into RAM, and that path is capped at **16 KB of text, 2000
+tokens**. The device has 400 KB of SRAM with no PSRAM, and the framebuffer alone costs
+48 KB. A `.rsvp` sidecar is streamed from the card instead and is not bound by those
+caps — it is the path a whole book takes.
 
 ## Controls
 
@@ -19,7 +20,8 @@ reading. The device has 400 KB of SRAM with no PSRAM, and the framebuffer alone 
 | **Confirm** | Play / pause |
 | **Left** | Rewind to the start of the sentence |
 | **Up / Down** | Speed up / down, 30 WPM per press |
-| **Back** | Redraw (also clears ghosting) |
+| **Right** | WiFi transfer mode — serve the upload page over the device's own AP |
+| **Back** | Redraw (also clears ghosting); leaves transfer mode |
 
 **Rewind is the feature, not a convenience.** Suppressing the backward glance is the one
 thing RSVP inherently does to a reader, and it measurably costs comprehension. Pressing

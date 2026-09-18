@@ -1,9 +1,16 @@
-// ABOUTME: Hardware pin map and reader tuning constants for the Xteink X4.
+// ABOUTME: Hardware pin map, panel rotation and WiFi transfer settings for the Xteink X4.
 // ABOUTME: Pin values are confirmed working on hardware, not copied from a guide.
 
 #pragma once
 
 #include <cstdint>
+
+// The reading frame's geometry and the document limits live in the shared module, not
+// here. They were duplicated once, and a device drawing a layout the simulator does not
+// is the failure this file must not reintroduce -- so the definitions are pulled in
+// rather than restated.
+#include "reader/document.hpp"
+#include "reader/layout.hpp"
 
 // Display (SSD1677 / GDEQ0426T82), confirmed on device
 #define EPD_SCLK 8
@@ -29,42 +36,16 @@ enum Button : uint8_t {
     kBtnPower = 6,
 };
 
-// Document limits.
-//
-// The device has 400 KB of SRAM with no PSRAM, and a full 800x480 framebuffer already
-// costs 48 KB. These caps keep text plus its token index inside what remains, and are
-// deliberately modest: roughly 6000 words is about half an hour of reading, which is a
-// session rather than a novel.
-// These bound only the in-RAM fallback for a small .txt. A .rsvp sidecar streams and
-// is not limited by them -- the test book is 98,633 tokens, sixty times this cap.
-// Kept small deliberately: the WiFi stack needs the space more than a fallback path
-// does, and anything long enough to care should be a sidecar.
-static constexpr size_t kMaxTextBytes = 16u * 1024u;
-static constexpr size_t kMaxTokens = 2000u;
-
 // Landscape, not portrait. The panel is natively 800x480 and a page-based reader is
-// held portrait, but RSVP wants one wide line and no height at all. In portrait the
-// chunk overran the right edge by 88px, because it is positioned by its pivot -- which
-// sits near the start of the first word -- so nearly the whole chunk extends rightward.
-// The budget is the screen width minus the focal column, and at 480px wide that is 290px
-// for text that needs 400. Landscape gives 500px and the problem disappears.
+// held portrait, but RSVP wants one wide line and no height at all. Landscape gives a
+// chunk 500px to the right of the focal column where portrait gives 290px, and portrait
+// overran the right edge by 88px. reader/layout.hpp carries the geometry itself and the
+// rest of that reasoning; this is the rotation that produces it.
 //
-// sim/ renders this layout and exits non-zero if any frame overflows, so the geometry
-// below is checked rather than assumed.
+// sim/ renders reader::kLandscape and exits non-zero if any frame overflows, so the
+// geometry is checked rather than assumed -- which only holds while the device and the
+// simulator read it from the same place.
 static constexpr uint8_t kRotation = 0;  // 800x480 landscape
-static constexpr int16_t kBandY = 180;
-static constexpr int16_t kBandH = 120;
-
-/// Horizontal position of the optimal recognition point.
-///
-/// Slightly left of centre, matching where the eye settles on a word. Every chunk is
-/// positioned so its pivot character lands on this column, which is the whole mechanism
-/// -- the eye fixates here once and never travels.
-static constexpr int16_t kFocalX = 300;
-
-// A full refresh clears ghosting but costs 1958ms (measured), so it is spent only where
-// the timing model already inserts a pause and the reader will not feel it as a stall.
-static constexpr uint32_t kPartialsBeforeFlush = 60u;
 
 // WiFi transfer. The radio is the largest single power draw on a 650 mAh cell, so it
 // runs only while the reader is explicitly in transfer mode, never in the background.

@@ -13,28 +13,32 @@
 
 #include "InputManager.h"
 #include "config.h"
-#include "document.h"
+#include "gxepd2_surface.h"
+#include "sd_source.h"
 #include "transfer.h"
-#include "rsvp/chunker.hpp"
-#include "rsvp/player.hpp"
+#include "reader/document.hpp"
+#include "reader/layout.hpp"
+#include "reader/reader.hpp"
 #include "rsvp/timing.hpp"
-#include "rsvp/tokenizer.hpp"
 
-GxEPD2_BW<GxEPD2_426_GDEQ0426T82, GxEPD2_426_GDEQ0426T82::HEIGHT> display(
-    GxEPD2_426_GDEQ0426T82(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY));
+using Display = GxEPD2_BW<GxEPD2_426_GDEQ0426T82, GxEPD2_426_GDEQ0426T82::HEIGHT>;
+
+Display display(GxEPD2_426_GDEQ0426T82(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY));
 
 static InputManager g_input;
 
-static Document g_doc;
+// The reading loop itself is in reader/, shared with the simulator. What is left here is
+// the wiring: a panel, a card, buttons and NVS. Anything about how reading behaves --
+// chunking, pacing, refresh policy, rewind -- belongs on the other side of that line,
+// where a host test can see it.
+static GxEpd2Surface<Display> g_surface(display);
+static SdSource g_source;
+static reader::Document g_doc;
+static reader::Reader g_reader(g_doc, g_surface, reader::kLandscape);
+
 static Preferences g_prefs;
 static Transfer g_transfer;
 static bool g_transferMode = false;
-
-static rsvp::TimingConfig g_timing;
-static rsvp::ChunkConfig g_chunking;
-static uint32_t g_index = 0;
-static bool g_playing = false;
-static uint32_t g_partialsSinceFlush = 0;
 static char g_docName[64] = "built-in";
 
 /// Shown when the SD card has nothing to read, so the device is never a blank screen.
@@ -48,12 +52,23 @@ static const char kFallback[] =
 
 // ---------------------------------------------------------------- document
 
+/// Records what the reader is reading. The name is both the status line and the key the
+/// resume position is stored under, so the two can never disagree.
+static void setDocumentName(const char* name) {
+    strncpy(g_docName, name, sizeof(g_docName) - 1);
+    g_docName[sizeof(g_docName) - 1] = '\0';
+    g_reader.setName(g_docName);
+}
+
 /// Opens the first .rsvp on the card, else the first .txt, else the built-in passage.
 ///
 /// .rsvp is preferred because it streams: a real book is far past what RAM holds, and
 /// the sidecar exists so the device can seek into a flat token array rather than build
 /// one. A .txt is still accepted for short pieces and is tokenised in memory.
 static void loadDocument() {
+    g_doc.close();
+    g_source.close();
+
     char best[64] = {0};
     bool bestIsSidecar = false;
 
@@ -77,102 +92,40 @@ static void loadDocument() {
         root.close();
     }
 
-    if (bestIsSidecar && g_doc.openSidecar(best)) {
-        strncpy(g_docName, best + 1, sizeof(g_docName) - 1);
-        return;
+    if (bestIsSidecar) {
+        if (g_source.open(best) && g_doc.openSidecar(g_source)) {
+            setDocumentName(best + 1);
+            return;
+        }
+        // A sidecar that will not parse must not keep the card's handle open behind the
+        // fallback the reader is about to show instead.
+        g_source.close();
     }
     if (best[0] != 0) {
         File f = SD.open(best, FILE_READ);
         if (f) {
-            static char buffer[kMaxTextBytes];
-            const size_t got = f.read(reinterpret_cast<uint8_t*>(buffer), kMaxTextBytes);
+            static char buffer[reader::kMaxTextBytes];
+            const size_t got =
+                f.read(reinterpret_cast<uint8_t*>(buffer), reader::kMaxTextBytes);
             f.close();
             if (got > 0) {
                 g_doc.useMemory(buffer, got);
-                strncpy(g_docName, best + 1, sizeof(g_docName) - 1);
+                setDocumentName(best + 1);
                 return;
             }
         }
     }
     g_doc.useMemory(kFallback, sizeof(kFallback) - 1);
-    strncpy(g_docName, "built-in", sizeof(g_docName) - 1);
+    setDocumentName("built-in");
 }
 
 // ---------------------------------------------------------------- rendering
 
-/// Builds the chunk starting at `start` into `out`, reporting its pivot character index.
-static uint32_t buildChunk(uint32_t start, char* out, size_t cap, uint8_t& pivotChar) {
-    // Gather the window the chunker needs. A chunk is at most maxWords tokens, so this
-    // stays tiny whether the source is RAM or a streamed file.
-    rsvp::Token window[8];
-    uint32_t have = 0;
-    const uint32_t limit = g_chunking.maxWords < 8u ? g_chunking.maxWords : 8u;
-    for (uint32_t i = 0; i < limit; ++i) {
-        const rsvp::Token* t = g_doc.token(start + i);
-        if (t == nullptr) {
-            break;
-        }
-        window[have++] = *t;
-    }
-    if (have == 0) {
-        out[0] = '\0';
-        pivotChar = 0;
-        return 0;
-    }
-
-    const uint32_t n = rsvp::chunkLength(window, have, 0u, g_chunking);
-    size_t len = 0;
-    for (uint32_t i = 0; i < n; ++i) {
-        if (i > 0 && len + 1 < cap) {
-            out[len++] = ' ';
-        }
-        char word[64];
-        const size_t got = g_doc.text(window[i].offset, window[i].length, word, sizeof(word));
-        for (size_t b = 0; b < got && len + 1 < cap; ++b) {
-            out[len++] = word[b];
-        }
-    }
-    out[len] = '\0';
-    // The pivot belongs to the chunk's first word, which is where the eye lands.
-    pivotChar = window[0].orp;
-    return n;
-}
-
-/// Width in pixels of the first `chars` characters of `s`, in the current font.
-static int16_t measurePrefix(const char* s, uint8_t chars) {
-    char buf[96];
-    size_t n = 0;
-    for (const char* p = s; *p && n < chars && n + 1 < sizeof(buf); ++p) {
-        buf[n++] = *p;
-    }
-    buf[n] = '\0';
-    int16_t x1 = 0, y1 = 0;
-    uint16_t w = 0, h = 0;
-    display.getTextBounds(buf, 0, 0, &x1, &y1, &w, &h);
-    return static_cast<int16_t>(w);
-}
-
-/// Static guide marks bracketing the focal column.
-///
-/// A colour highlight is the usual way to mark the recognition point, and a 1-bit panel
-/// cannot do it. These ticks sit outside the band that gets redrawn, so they are drawn
-/// once per full refresh and cost nothing per word.
-static void drawGuides() {
-    display.fillRect(kFocalX - 1, kBandY - 26, 3, 16, GxEPD_BLACK);
-    display.fillRect(kFocalX - 1, kBandY + kBandH + 10, 3, 16, GxEPD_BLACK);
-}
-
-static void drawStatus() {
-    display.setFont(&FreeMonoBold12pt7b);
-    display.setCursor(20, 60);
-    display.printf("%s", g_docName);
-    display.setCursor(20, 95);
-    const uint32_t pct = g_doc.count() ? (g_index * 100u) / g_doc.count() : 0u;
-    display.printf("%u wpm  %u%%  %s", static_cast<unsigned>(g_timing.wpm),
-                   static_cast<unsigned>(pct), g_playing ? "" : "[paused]");
-}
-
 /// Transfer-mode screen: how to connect, and what has arrived.
+///
+/// Drawn straight onto the panel rather than through the reader's surface: this is not a
+/// reading frame, it has no chunk and no focal column, and nothing about it needs to be
+/// the same code the simulator runs.
 static void renderTransfer() {
     display.setFullWindow();
     display.firstPage();
@@ -206,88 +159,6 @@ static void renderTransfer() {
         display.setCursor(20, 470);
         display.print("Back to exit");
     } while (display.nextPage());
-    g_partialsSinceFlush = 0;
-}
-
-/// Full redraw: status, guides, and the current chunk. Also clears ghosting.
-static void renderFull() {
-    char chunk[96];
-    uint8_t pivot = 0;
-    buildChunk(g_index, chunk, sizeof(chunk), pivot);
-
-    display.setFullWindow();
-    display.firstPage();
-    do {
-        display.fillScreen(GxEPD_WHITE);
-        display.setTextColor(GxEPD_BLACK);
-        drawStatus();
-        drawGuides();
-        display.setFont(&FreeMonoBold18pt7b);
-        const int16_t x = static_cast<int16_t>(kFocalX - measurePrefix(chunk, pivot));
-        display.setCursor(x, kBandY + 70);
-        display.print(chunk);
-    } while (display.nextPage());
-    g_partialsSinceFlush = 0;
-}
-
-/// Redraws only the reading band. This is the hot path, ~542ms measured.
-static void renderChunk() {
-    char chunk[96];
-    uint8_t pivot = 0;
-    buildChunk(g_index, chunk, sizeof(chunk), pivot);
-
-    display.setPartialWindow(0, kBandY, display.width(), kBandH);
-    display.firstPage();
-    do {
-        display.fillScreen(GxEPD_WHITE);
-        display.setTextColor(GxEPD_BLACK);
-        display.setFont(&FreeMonoBold18pt7b);
-        const int16_t x = static_cast<int16_t>(kFocalX - measurePrefix(chunk, pivot));
-        display.setCursor(x, kBandY + 70);
-        display.print(chunk);
-    } while (display.nextPage());
-    ++g_partialsSinceFlush;
-}
-
-// ---------------------------------------------------------------- navigation
-
-/// First token of the sentence containing `from`, for rewind.
-static bool sentenceEndsAt(uint32_t i) {
-    const rsvp::Token* t = g_doc.token(i);
-    return t != nullptr && t->has(rsvp::kTokenFlagSentenceEnd);
-}
-
-static uint32_t sentenceStart(uint32_t from) {
-    for (uint32_t i = from; i > 0u; --i) {
-        if (sentenceEndsAt(i - 1u)) {
-            return i;
-        }
-    }
-    return 0u;
-}
-
-/// Rewind is the feature, not a convenience -- suppressing the backward glance is the
-/// one thing RSVP inherently does to a reader, and it measurably costs comprehension.
-/// Pressing again while already at a sentence start steps into the previous sentence,
-/// so repeated presses walk backwards instead of sticking.
-static void rewindSentence() {
-    const uint32_t start = sentenceStart(g_index);
-    if (start < g_index) {
-        g_index = start;
-    } else if (g_index > 0u) {
-        g_index = sentenceStart(g_index - 1u);
-    }
-}
-
-static void adjustSpeed(int delta) {
-    int wpm = static_cast<int>(g_timing.wpm) + delta;
-    if (wpm < 60) {
-        wpm = 60;
-    }
-    if (wpm > 900) {
-        wpm = 900;
-    }
-    g_timing.wpm = static_cast<uint16_t>(wpm);
 }
 
 // ---------------------------------------------------------------- lifecycle
@@ -313,25 +184,25 @@ void setup() {
 
     // Resume where the last session stopped. The position is keyed by document name, so
     // swapping the card does not drop the reader into a random paragraph of another book.
+    // A position past the end of this document is ignored rather than honoured.
     g_prefs.begin("inkflow", false);
     if (g_prefs.getString("doc", "") == String(g_docName)) {
-        const uint32_t saved = g_prefs.getUInt("pos", 0u);
-        if (saved < g_doc.count()) {
-            g_index = saved;
-        }
+        g_reader.seek(g_prefs.getUInt("pos", 0u));
     }
 
     // Three words per update is not a preference. At the measured 542ms refresh floor
     // one word yields 111 WPM, far below the speed at which comprehension holds.
-    g_timing.wpm = 330u;
-    g_timing.minHoldMs = rsvp::kPanelPartialRefreshMs;
+    rsvp::TimingConfig timing;
+    timing.wpm = 330u;
+    timing.minHoldMs = rsvp::kPanelPartialRefreshMs;
+    g_reader.setTiming(timing);
 
     Serial.printf("inkflow: %s, %u tokens, %s, resume at %u\n", g_docName,
                   static_cast<unsigned>(g_doc.count()),
                   g_doc.streaming() ? "streamed" : "in RAM",
-                  static_cast<unsigned>(g_index));
+                  static_cast<unsigned>(g_reader.index()));
 
-    renderFull();
+    g_reader.renderFull();
 }
 
 void loop() {
@@ -351,90 +222,71 @@ void loop() {
         if (g_input.wasPressed(kBtnBack)) {
             g_transfer.end();
             g_transferMode = false;
-            // Pick up whatever just arrived, and start it from the beginning.
-            g_doc.close();
+
+            // Pick up whatever just arrived. The reading position only resets when the
+            // document is no longer the one it belongs to: entering transfer mode to
+            // check a battery level and leaving again should not cost the reader its
+            // place. A same-named file that got shorter is a different document too, so
+            // a position now past the end resets as well.
+            char previous[sizeof(g_docName)];
+            snprintf(previous, sizeof(previous), "%s", g_docName);
             loadDocument();
-            g_index = 0;
-            renderFull();
+            if (strcmp(g_docName, previous) != 0 || g_reader.index() >= g_doc.count()) {
+                g_reader.seek(0);
+            }
+            g_reader.renderFull();
         }
         delay(5);
         return;
     }
 
     if (g_input.wasPressed(kBtnConfirm)) {
-        g_playing = !g_playing;
-        renderFull();
+        g_reader.togglePlay();
+        g_reader.renderFull();
     } else if (g_input.wasPressed(kBtnLeft)) {
-        rewindSentence();
-        renderFull();
+        g_reader.rewindSentence();
+        g_reader.renderFull();
     } else if (g_input.wasPressed(kBtnUp)) {
-        adjustSpeed(+30);
-        renderFull();
+        g_reader.adjustSpeed(+30);
+        g_reader.renderFull();
     } else if (g_input.wasPressed(kBtnDown)) {
-        adjustSpeed(-30);
-        renderFull();
+        g_reader.adjustSpeed(-30);
+        g_reader.renderFull();
     } else if (g_input.wasPressed(kBtnRight)) {
         g_transferMode = true;
-        g_playing = false;
+        g_reader.setPlaying(false);
         g_transfer.begin();
         renderTransfer();
     } else if (g_input.wasPressed(kBtnBack)) {
-        renderFull();
+        g_reader.renderFull();
     }
 
-    if (!g_playing || g_index >= g_doc.count()) {
+    if (!g_reader.playing() || g_reader.atEnd()) {
         delay(20);
         return;
     }
 
-    char chunkText[96];
-    uint8_t pivot = 0;
-    const uint32_t chunkLen = buildChunk(g_index, chunkText, sizeof(chunkText), pivot);
-    if (chunkLen == 0u) {
-        g_playing = false;
+    const uint32_t started = millis();
+
+    // One chunk: assembled, positioned on the focal column, and drawn with whichever
+    // refresh the ghosting budget calls for. All of that is the shared reader's.
+    reader::Frame frame{};
+    if (!g_reader.step(frame)) {
         return;
     }
 
-    // The chunk is held for as long as its slowest token needs -- a chunk ending a
-    // sentence carries that sentence's pause.
-    uint32_t hold = 0;
-    bool atParagraph = false;
-    for (uint32_t i = 0; i < chunkLen; ++i) {
-        const rsvp::Token* t = g_doc.token(g_index + i);
-        if (t == nullptr) {
-            break;
-        }
-        const uint32_t h = rsvp::holdMs(*t, g_timing);
-        if (h > hold) {
-            hold = h;
-        }
-        atParagraph = atParagraph || t->has(rsvp::kTokenFlagParagraphEnd);
-    }
-
-    const uint32_t started = millis();
-
-    // Ghosting accrues over successive partial updates. Spend the 1958ms full refresh
-    // on a paragraph boundary, where the timing model already inserts a beat, so it
-    // reads as an intentional pause rather than a fault.
-    if (g_partialsSinceFlush >= kPartialsBeforeFlush && atParagraph) {
-        renderFull();
-    } else {
-        renderChunk();
-    }
-
-    g_index += chunkLen;
-
     // Persist every few chunks rather than every one: NVS has finite write endurance,
     // and losing at most a few seconds of position is not worth wearing it out.
-    if ((g_index / 16u) != (lastSaved / 16u)) {
-        lastSaved = g_index;
+    const uint32_t index = g_reader.index();
+    if ((index / 16u) != (lastSaved / 16u)) {
+        lastSaved = index;
         g_prefs.putString("doc", g_docName);
-        g_prefs.putUInt("pos", g_index);
+        g_prefs.putUInt("pos", index);
     }
 
     // Refresh time counts against the hold: the panel already spent it showing the word.
     const uint32_t spent = millis() - started;
-    if (hold > spent) {
-        delay(hold - spent);
+    if (frame.holdMs > spent) {
+        delay(frame.holdMs - spent);
     }
 }
