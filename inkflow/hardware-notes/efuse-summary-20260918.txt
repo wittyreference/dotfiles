@@ -30,8 +30,12 @@ DIS_TWAI (BLOCK0)                                  Set this bit to disable CAN f
 DIS_DIRECT_BOOT (BLOCK0)                           Disable direct boot mode                           = False R/W (0b0)
 UART_PRINT_CONTROL (BLOCK0)                        Set the default UARTboot message output mode       = Enable R/W (0b00)
 ERR_RST_ENABLE (BLOCK0)                            Use BLOCK0 to check error record registers         = with check R/W (0b1)
+# BLOCK_USR_DATA carries this unit's serial number in plain ASCII. It is redacted
+# because this file is published and a serial identifies one physical device and its
+# purchase. What matters for the project is the block's PURPOSE (USER) and that it is
+# unburned and unprotected, both of which are still visible below.
 BLOCK_USR_DATA (BLOCK3)                            User data                                         
-   = 58 34 41 57 30 31 45 4e 32 36 30 35 31 38 30 31 30 37 32 00 00 00 00 00 00 00 00 00 00 00 00 00 R/W 
+   = -- REDACTED -- 19 ASCII bytes, the unit's manufacturer serial, then 13 bytes of 00 -- R/W 
 BLOCK_SYS_DATA2 (BLOCK10)                          System data part 2 (reserved)                     
    = 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 R/W 
 
