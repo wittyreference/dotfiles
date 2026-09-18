@@ -76,6 +76,12 @@ def extract(path: str, skip_short: int) -> tuple[str, str]:
             try:
                 raw = z.read(member).decode("utf-8", "replace")
             except KeyError:
+                # The spine promises a document the archive does not hold, so the book
+                # is damaged and that chapter is gone from the output either way. Carry
+                # on, because the remaining chapters are still worth reading -- but say
+                # so, or the hole reads as the author's own jump cut.
+                print(f"epub-to-text: {member} is in the spine but not in the archive;"
+                      " skipping it", file=sys.stderr)
                 continue
             text = html_to_text(raw)
             # Covers, title pages and colophons are a few words of furniture that would

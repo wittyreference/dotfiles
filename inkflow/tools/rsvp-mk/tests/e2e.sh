@@ -40,8 +40,13 @@ DOC
 echo "e2e: rsvp-mk"
 
 # --- conversion succeeds and produces a well-formed file ---------------------
+# `set -e` has to come off to observe the exit status: left on, a non-zero status
+# aborts the script before the check can run, so the check would always pass.
+set +e
 "$RSVP_MK" "$WORK/book.md" > "$WORK/stdout.txt" 2> "$WORK/stderr.txt"
-check "exits 0 on a valid input" "$([ $? -eq 0 ] && echo yes || echo no)"
+convert_status=$?
+set -e
+check "exits 0 on a valid input" "$([ "$convert_status" -eq 0 ] && echo yes || echo no)"
 check "derives the default .rsvp output path" "$([ -f "$WORK/book.rsvp" ] && echo yes || echo no)"
 
 magic="$(head -c 4 "$WORK/book.rsvp")"
@@ -109,6 +114,27 @@ check "no arguments fails" "$([ "$noargs_status" -ne 0 ] && echo yes || echo no)
 check "unknown option fails" "$([ "$badopt_status" -ne 0 ] && echo yes || echo no)"
 check "out-of-range --wpm fails" "$([ "$badwpm_status" -ne 0 ] && echo yes || echo no)"
 check "--help exits 0" "$([ "$help_status" -eq 0 ] && echo yes || echo no)"
+
+# --- refuses to overwrite its own input --------------------------------------
+# `rsvp-mk book.rsvp` resolves its default output to book.rsvp, which is the input.
+# Left unguarded the input is truncated before it is read back, destroying the only
+# copy of the source the user had.
+cp "$WORK/plain.txt" "$WORK/self.rsvp"
+self_before="$(cksum < "$WORK/self.rsvp")"
+set +e
+"$RSVP_MK" "$WORK/self.rsvp" > /dev/null 2> "$WORK/self.err"
+self_status=$?
+"$RSVP_MK" "$WORK/plain.txt" -o "$WORK/./plain.txt" > /dev/null 2> "$WORK/alias.err"
+alias_status=$?
+set -e
+
+check "refuses to write over its own input" "$([ "$self_status" -eq 2 ] && echo yes || echo no)"
+check "leaves the input untouched when it refuses" \
+    "$([ "$self_before" = "$(cksum < "$WORK/self.rsvp")" ] && echo yes || echo no)"
+check "explains the refusal on stderr" \
+    "$(grep -q 'would overwrite' "$WORK/self.err" && echo yes || echo no)"
+check "recognises the input reached by a different spelling of its path" \
+    "$([ "$alias_status" -eq 2 ] && echo yes || echo no)"
 
 # --- an empty input is valid, not an error ----------------------------------
 : > "$WORK/empty.txt"

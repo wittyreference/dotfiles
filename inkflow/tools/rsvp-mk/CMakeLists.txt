@@ -35,3 +35,10 @@ add_test(
     NAME rsvpmk_e2e
     COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e.sh $<TARGET_FILE:rsvp_mk>
 )
+
+# epub-to-text feeds this tool and has no C++ to build, so the top-level list has no
+# target to descend for; its tests are pulled in from here to keep them in ctest.
+add_subdirectory(
+    ${CMAKE_SOURCE_DIR}/tools/epub-to-text
+    ${CMAKE_CURRENT_BINARY_DIR}/epub-to-text
+)

@@ -20,6 +20,30 @@ bool isAlnum(char c) noexcept {
 bool isSpaceOrTab(char c) noexcept { return c == ' ' || c == '\t'; }
 
 /// True for a line that is only `-`, `*`, or `_` repeated three or more times.
+/// True for a table delimiter row: `|---|---:|`, with optional alignment colons.
+///
+/// Markdown tables are otherwise untouched by this stripper, and a delimiter row has no
+/// word characters at all -- so the pivot lands at index zero and the reader draws a
+/// 25-character rule hanging off the right of the focal column. It is structure, not
+/// something anyone reads aloud.
+bool isTableDelimiter(const std::string& line) noexcept {
+    std::size_t dashes = 0u;
+    std::size_t pipes = 0u;
+    for (const char c : line) {
+        if (isSpaceOrTab(c)) {
+            continue;
+        }
+        if (c == '-') {
+            ++dashes;
+        } else if (c == '|') {
+            ++pipes;
+        } else if (c != ':') {
+            return false;
+        }
+    }
+    return dashes >= 3u && pipes >= 1u;
+}
+
 bool isHorizontalRule(const std::string& line) noexcept {
     char marker = '\0';
     std::size_t count = 0u;
@@ -196,10 +220,10 @@ std::string markdownToText(const std::string& markdown) {
         std::string emitted;
         if (isCodeFence(line)) {
             inFence = !inFence;
-        } else if (inFence || isHorizontalRule(line)) {
-            // Dropped: source code and rules are not prose. An empty line is left in
-            // their place, which preserves the blank-line runs that paragraph
-            // detection depends on.
+        } else if (inFence || isHorizontalRule(line) || isTableDelimiter(line)) {
+            // Dropped: source code, rules and table delimiters are not prose. An empty
+            // line is left in their place, which preserves the blank-line runs that
+            // paragraph detection depends on.
         } else {
             emitted = stripInlineMarkers(stripBlockMarkers(line));
         }
