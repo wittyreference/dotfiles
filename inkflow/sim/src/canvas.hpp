@@ -62,6 +62,7 @@ public:
     }
 
     void setFont(const GFXfont* f) { font_ = f; }
+    const GFXfont* currentFont() const { return font_; }
     void setTextColor(uint16_t c) { colour_ = c; }
     void setCursor(int x, int y) { cx_ = x; cy_ = y; }
 
@@ -88,6 +89,15 @@ public:
                 h = g->height;
             }
         }
+    }
+
+    /// Colour at a pixel, for asserting on what was actually drawn. Out-of-bounds
+    /// reads report white, which is what an unwritten panel shows.
+    uint16_t pixel(int x, int y) const {
+        if (x < 0 || y < 0 || x >= w_ || y >= h_) {
+            return kWhite;
+        }
+        return px_[size_t(y) * size_t(w_) + size_t(x)] == 0 ? kBlack : kWhite;
     }
 
     bool writePng(const char* path) const;

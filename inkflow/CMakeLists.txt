@@ -21,5 +21,7 @@ endif()
 enable_testing()
 
 add_subdirectory(core)
+add_subdirectory(reader)
 add_subdirectory(tools/rsvp-mk)
 add_subdirectory(bench)
+add_subdirectory(sim)
