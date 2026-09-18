@@ -76,6 +76,14 @@ RsvpStatus writeRsvp(const Token* tokens, std::uint32_t tokenCount, const char* 
                      std::size_t& bytesWritten) noexcept {
     bytesWritten = 0u;
 
+    // A payload the caller declared but did not supply cannot be written. Continuing
+    // would emit a header claiming those bytes, leave them as whatever the buffer held,
+    // and then checksum that -- a file which passes every read-side check and renders
+    // uninitialised memory as prose.
+    if ((tokens == nullptr && tokenCount > 0u) || (text == nullptr && textLength > 0u)) {
+        return RsvpStatus::kNullPayload;
+    }
+
     // Guard the size arithmetic before trusting it. On a 32-bit target
     // tokenCount * 8 can wrap, and a wrapped total would pass the capacity check
     // and then overrun the buffer -- so check for the wrap rather than assuming the
@@ -139,6 +147,14 @@ RsvpStatus readRsvpHeader(const unsigned char* data, std::size_t size, RsvpHeade
     header.flags = get32(data + kOffFlags);
     header.checksum = get32(data + kOffChecksum);
 
+    // flags is reserved in version 1, so a set bit means the writer used an extension
+    // this build does not implement. The version field cannot express that on its own:
+    // a writer adding an optional feature leaves version at 1 and sets a flag. Treat an
+    // unknown flag exactly like an unknown version -- refuse rather than guess.
+    if (header.flags != 0u) {
+        return RsvpStatus::kUnsupportedVersion;
+    }
+
     // A header smaller than version 1's is malformed, not merely old.
     if (header.headerSize < kRsvpHeaderSize) {
         return RsvpStatus::kTruncated;
@@ -150,7 +166,16 @@ RsvpStatus readRsvpHeader(const unsigned char* data, std::size_t size, RsvpHeade
     if (tokenBytes / sizeof(Token) != header.tokenCount) {
         return RsvpStatus::kTruncated;
     }
-    if (static_cast<std::size_t>(header.headerSize) + tokenBytes > size) {
+    const std::size_t tokenEnd = static_cast<std::size_t>(header.headerSize) + tokenBytes;
+    if (tokenEnd > size) {
+        return RsvpStatus::kTruncated;
+    }
+
+    // The text blob must start past the token array. A textOffset pointing into the
+    // tokens satisfies every length check -- the region is inside the buffer -- so
+    // nothing downstream would notice, and rsvpText() would hand back eight-byte token
+    // records for the reader to render as prose.
+    if (static_cast<std::size_t>(header.textOffset) < tokenEnd) {
         return RsvpStatus::kTruncated;
     }
     const std::size_t textEnd =

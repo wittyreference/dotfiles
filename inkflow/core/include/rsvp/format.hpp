@@ -71,15 +71,22 @@ enum class RsvpStatus : std::uint8_t {
 
     /// A version this build does not understand. Refused rather than guessed at --
     /// misreading an unknown layout renders a book as garbage, which is worse than
-    /// declining to open it.
+    /// declining to open it. Also returned for a version-1 file with any reserved
+    /// `flags` bit set, which is how a writer signals an extension.
     kUnsupportedVersion,
 
     /// The buffer is shorter than the header says the file is. The usual cause is a
-    /// card pulled mid-write.
+    /// card pulled mid-write. Also covers a header whose regions are impossible --
+    /// smaller than version 1's, or a text blob starting inside the token array.
     kTruncated,
 
     /// CRC mismatch: the bytes are not what was written.
     kChecksumMismatch,
+
+    /// A payload pointer is null while the length declared for it is not zero. The
+    /// bytes would be left as whatever the output buffer already held and the CRC
+    /// taken over them, producing a file that validates and reads as garbage.
+    kNullPayload,
 };
 
 /// Total file size for a document with these dimensions.

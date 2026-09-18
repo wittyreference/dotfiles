@@ -112,6 +112,25 @@ TEST_CASE("writing into a buffer that is too small is refused, not truncated") {
     CHECK(written == 0u);
 }
 
+TEST_CASE("writing a payload the caller did not supply is refused") {
+    // A null pointer with a non-zero count leaves those bytes untouched and then CRCs
+    // whatever the buffer already held. The result passes every read-side check, so the
+    // corruption only surfaces as garbage on screen.
+    const auto tokens = tokenize(kText);
+    std::vector<std::uint32_t> buffer(64u, 0u);
+    unsigned char* out = reinterpret_cast<unsigned char*>(buffer.data());
+    std::size_t written = 999u;
+
+    CHECK(rsvp::writeRsvp(nullptr, 4u, kText.data(), static_cast<std::uint32_t>(kText.size()), out,
+                          buffer.size() * 4u, written) == rsvp::RsvpStatus::kNullPayload);
+    CHECK(written == 0u);
+
+    written = 999u;
+    CHECK(rsvp::writeRsvp(tokens.data(), static_cast<std::uint32_t>(tokens.size()), nullptr, 10u,
+                          out, buffer.size() * 4u, written) == rsvp::RsvpStatus::kNullPayload);
+    CHECK(written == 0u);
+}
+
 TEST_CASE("a file with the wrong magic is rejected") {
     auto built = build(kText);
     built.bytes()[0] = 'X';
@@ -132,6 +151,19 @@ TEST_CASE("a file from a future format version is refused rather than misread") 
           rsvp::RsvpStatus::kUnsupportedVersion);
 }
 
+TEST_CASE("a version-1 file with reserved flags set is refused") {
+    // flags is reserved and must be zero in version 1, so a set bit means the writer
+    // extended the format. Reading such a file as plain v1 silently ignores whatever
+    // that bit was promising, which is the failure versioning exists to prevent.
+    auto built = build(kText);
+    const std::uint32_t reserved = 1u;
+    std::memcpy(built.bytes() + 24u, &reserved, sizeof(reserved));
+
+    rsvp::RsvpHeader header{};
+    CHECK(rsvp::readRsvpHeader(built.bytes(), built.size, header) ==
+          rsvp::RsvpStatus::kUnsupportedVersion);
+}
+
 TEST_CASE("a file shorter than its header declares is rejected") {
     // The common real-world corruption: a card pulled mid-write.
     auto built = build(kText);
@@ -139,6 +171,20 @@ TEST_CASE("a file shorter than its header declares is rejected") {
     rsvp::RsvpHeader header{};
     CHECK(rsvp::readRsvpHeader(built.bytes(), built.size - 10u, header) ==
           rsvp::RsvpStatus::kTruncated);
+}
+
+TEST_CASE("a text blob that starts inside the token array is rejected") {
+    // Such a file passes every length check -- the text still ends inside the buffer --
+    // but the region it names is tokens, so rsvpText() would hand the caller eight-byte
+    // token records and the reader would render them as prose.
+    auto built = build(kText);
+    REQUIRE(built.tokens.size() >= 2u);
+
+    const std::uint32_t intoTokens = static_cast<std::uint32_t>(rsvp::kRsvpHeaderSize) + 8u;
+    std::memcpy(built.bytes() + 12u, &intoTokens, sizeof(intoTokens));
+
+    rsvp::RsvpHeader header{};
+    CHECK(rsvp::readRsvpHeader(built.bytes(), built.size, header) == rsvp::RsvpStatus::kTruncated);
 }
 
 TEST_CASE("a buffer too small to even hold a header is rejected") {
