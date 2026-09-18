@@ -50,8 +50,20 @@ inline constexpr Layout kPortrait{480, 800, 330, 120, 190};
 /// Baseline of the chunk text, measured down from the top of the band.
 inline constexpr int16_t kChunkBaseline = 70;
 
-/// Full refresh clears ghosting but costs 1958ms (measured), so it is spent only where
-/// the timing model already inserts a pause and the reader will not feel it as a stall.
+/// Full refresh clears ghosting but costs 1958ms (measured), so it is spent where the
+/// timing model already inserts a pause and the reader will not feel it as a stall.
+///
+/// Three tiers, because prose does not owe the reader a paragraph on schedule. Preferring
+/// a paragraph boundary is right, but waiting for one indefinitely is not: on a real book
+/// that let ghosting reach 135 partial updates deep, more than twice the intended bound,
+/// and there is no amount of landing-on-a-beat that makes an illegible panel acceptable.
 inline constexpr uint32_t kPartialsBeforeFlush = 60u;
+
+/// Past this, a sentence boundary is good enough. Still a beat, just a smaller one.
+inline constexpr uint32_t kPartialsBeforeSentenceFlush = 90u;
+
+/// Past this, flush regardless. A full refresh mid-phrase reads as a fault, and so does
+/// a screen this ghosted; the difference is that this one recovers.
+inline constexpr uint32_t kPartialsFlushDeadline = 120u;
 
 }  // namespace reader

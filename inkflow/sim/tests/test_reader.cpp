@@ -218,6 +218,41 @@ TEST_CASE("a band update leaves the guide marks standing") {
     CHECK(panel.canvas().pixel(tickX, tickY) == sim::kBlack);
 }
 
+TEST_CASE("ghosting is cleared within a bound even without paragraph breaks") {
+    // The flush wants a paragraph boundary, so that the 1958ms full refresh lands where
+    // the timing model already inserts a beat and reads as intentional rather than as a
+    // fault. But prose does not owe the reader a paragraph on schedule. A long stretch
+    // without one lets ghosting accrue unboundedly, and there is no amount of "reads as
+    // intentional" that makes an illegible panel acceptable.
+    //
+    // Real prose with real sentence structure, just no blank lines -- which is exactly
+    // what a long quoted passage, a list, or dialogue looks like.
+    std::string dense;
+    for (int i = 0; i < 400; ++i) {
+        dense +=
+            "The panel refreshes slowly and that decides everything here. A partial "
+            "update costs the same regardless of area. Words arrive in threes. ";
+    }
+
+    sim::Panel panel(reader::kLandscape);
+    reader::Document doc;
+    doc.useMemory(dense.data(), dense.size());
+    REQUIRE(doc.count() > 1000u);
+
+    reader::Reader r(doc, panel, reader::kLandscape);
+    r.setTiming(timingAt(330));
+    r.setPlaying(true);
+
+    reader::Frame frame{};
+    while (r.step(frame)) {
+    }
+
+    CAPTURE(panel.peakGhost());
+    CAPTURE(panel.fullRefreshes());
+    CHECK(panel.fullRefreshes() > 0u);
+    CHECK(panel.peakGhost() <= reader::kPartialsFlushDeadline);
+}
+
 TEST_CASE("delivered pace tracks requested speed") {
     // The whole point of the speed buttons. A reader that ignores them is worse than one
     // without them, because it looks like it is responding.

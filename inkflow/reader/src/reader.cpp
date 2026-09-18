@@ -232,18 +232,24 @@ bool Reader::step(Frame& out) {
     }
 
     bool atParagraph = false;
+    bool atSentence = false;
     for (uint32_t i = 0; i < out.tokens; ++i) {
         const rsvp::Token* t = doc_.token(index_ + i);
         if (t == nullptr) {
             break;
         }
         atParagraph = atParagraph || t->has(rsvp::kTokenFlagParagraphEnd);
+        atSentence = atSentence || t->has(rsvp::kTokenFlagSentenceEnd);
     }
 
-    // Ghosting accrues over successive partial updates. Spend the 1958ms full refresh
-    // on a paragraph boundary, where the timing model already inserts a beat, so it
-    // reads as an intentional pause rather than a fault.
-    out.fullRefresh = partialsSinceFlush_ >= kPartialsBeforeFlush && atParagraph;
+    // Ghosting accrues over successive partial updates. Spend the 1958ms full refresh on
+    // a paragraph boundary, where the timing model already inserts a beat, so it reads as
+    // an intentional pause rather than a fault -- but do not wait for one forever. A
+    // sentence will do once the count has run on, and past the deadline the refresh
+    // happens wherever it falls.
+    out.fullRefresh = (partialsSinceFlush_ >= kPartialsBeforeFlush && atParagraph) ||
+                      (partialsSinceFlush_ >= kPartialsBeforeSentenceFlush && atSentence) ||
+                      (partialsSinceFlush_ >= kPartialsFlushDeadline);
     if (out.fullRefresh) {
         const FullPainter painter(*this, out);
         surface_.renderFull(painter);
