@@ -30,6 +30,7 @@ add_executable(rsvp_core_tests
     tests/test_timing.cpp
     tests/test_token_flags.cpp
     tests/test_integration.cpp
+    tests/test_calibration.cpp
     tests/test_player.cpp
     tests/test_format.cpp
 )
