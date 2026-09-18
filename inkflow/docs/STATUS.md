@@ -1,7 +1,8 @@
 # Status and handoff
 
-Last updated **2026-09-17**, after the simulator was made authoritative and the firmware
-was rebound onto it. Written so a fresh session can resume without re-deriving anything.
+Last updated **2026-09-18**, after the simulator was made authoritative, the firmware was
+rebound onto it, and the panel was recovered. Written so a fresh session can resume
+without re-deriving anything.
 
 ## Read first
 
@@ -93,7 +94,7 @@ of an evening. `transfer.h` constructs it lazily in `begin()`.
 | `tools/epub-to-text/` | EPUB to text, spine order preserved. **10 tests** |
 | `bench/eink-bench/` | Panel measurement firmware. Run; results in `hardware-notes/` |
 | `sim/` | Runs the shipped loop against a modelled panel; fails the build on a layout fault; writes a GIF at true reading pace |
-| `firmware/reader/` | The reader. **Compiles and links for esp32-c3 — RAM 122300, flash 847684 — and has never been flashed** |
+| `firmware/reader/` | The reader. Compiles for esp32-c3 — RAM 122300, flash 847684. **Written to app0 and verified. Has not yet been run** |
 
 Everything green: `cmake -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build -j &&
 ctest --test-dir build` gives 7/7.
@@ -117,45 +118,53 @@ Comprehension holds at 250–350 WPM, so single-word RSVP is impossible on this 
 SPI contention between SD and EPD is a non-issue: 0.6 ms of 542. Timing is deterministic:
 p95 equals median across 100 updates.
 
-## Open problem: the panel froze
+## The panel recovered
 
-At the end of the hardware session the display stopped updating **even with the known-good
-community sample firmware flashed**, which rules out the reader firmware as the cause. The
-serial port has since reappeared, so the device is alive at the USB level. Nothing has been
-flashed since.
+The display that stopped updating at the end of the bring-up session **comes back on a
+proper power-cycle.** Nothing had to be changed. Full account in
+[`../hardware-notes/panel-recovery-20260918.md`](../hardware-notes/panel-recovery-20260918.md).
 
-Not yet established: whether the panel recovers on a full power-cycle, whether the battery
-was simply flat after an evening of sustained refreshing and WiFi, or whether something left
-the display controller in a bad state.
+The community sample firmware was re-cloned, built and flashed to app0, and it drew. So
+the freeze was transient: not a dead controller, not a bricked device. This does not
+distinguish between the two suspects STATUS previously named — `eink-bench` ending in
+`display.hibernate()` against a 2 ms reset pulse where the SSD1677 guide specifies 10 ms,
+and a flat battery after an evening of sustained refreshing and WiFi — because a
+power-cycle clears both. It does establish that neither leaves permanent damage.
 
-Two named suspects, cheapest first. `bench/eink-bench` ends with `display.hibernate()`, and
-the vendored `open-x4-sdk/libs/display/EInkDisplay/doc/SSD1677_GUIDE.md` says waking from
-hibernate *"requires hardware reset via RST pin"* — while both firmwares init with
-`reset_duration = 2` ms against the guide's specified 10 ms. Raising it is a one-line test.
-A flat battery is the other candidate.
+Raising `reset_duration` from 2 ms to 10 ms is still worth doing on principle, and there
+is now a known-good baseline to test it against. It was deliberately not done in the same
+run: changing one variable while diagnosing another is how the previous session lost its
+bisect.
 
-**Next step is to establish a known-good baseline again** — flash the sample, power-cycle
-properly, confirm the panel draws — before flashing anything new. A mistake made in the
-hardware session was flashing three successively more complex firmwares without confirming
-each one rendered, which left it ambiguous which change broke things.
+## Current device state
 
-Note the community sample firmware is **not in this repo and not on the machine**. It has
-to be re-cloned from `open-x4-epaper/sample-firmware` before step 1 can run.
+`app0` holds the inkflow reader — 880,720 bytes, sha256
+`d5b93156...34ad5318`, written and verified against the flash.
+
+**It has not been power-cycled, so it has not yet run.** `--after no-reset` deliberately
+leaves the device in the ROM bootloader; the reader starts on the next power cycle. The
+serial port is the fastest way to see what happens then, because this firmware builds with
+`ARDUINO_USB_CDC_ON_BOOT=1` and holds USB up after boot, unlike stock. Six lines come out
+at startup — `boot`, `input ok`, `display ok`, `sd ok|absent`, `document loaded`, and a
+summary naming the document, its token count, streamed-or-RAM, and the resume index. They
+distinguish a panel fault from a card fault without anyone reading the screen.
+
+Stock is restorable at any time with `scripts/03-restore.sh`.
 
 ## What to do next
 
-1. **Recover the panel** and confirm the sample firmware draws. This is the only step that
-   needs someone to look at the device.
-2. **Flash the reader** with `scripts/02-flash.sh`. It writes app0 at `0x10000` only and
-   refuses an image without the `0xE9` ESP magic. `scripts/03-restore.sh` puts stock back,
-   verifying the golden image's sha256 before writing rather than after.
-3. **Transfer the book.** Press Right on the reader for WiFi transfer, join network
+1. ~~Recover the panel~~ — **done.** The sample firmware drew after a power-cycle.
+2. ~~Flash the reader~~ — **done.** Written and verified at `0x10000`; not yet run.
+3. **Power-cycle and watch the serial port.** This is the next action and the only one
+   that needs someone at the device. Six bring-up lines say whether the panel, the card
+   and the document all came up.
+4. **Transfer the book.** Press Right on the reader for WiFi transfer, join network
    `inkflow` / `inkflow-reader`, open `http://192.168.4.1`, upload `agents.rsvp`, press
    Back.
-4. **Read it, and tune from the experience.** Nobody has yet confirmed the pacing works.
+5. **Read it, and tune from the experience.** Nobody has yet confirmed the pacing works.
    That is the one question no amount of measurement answers — but the speed control does
    respond now, which it did not before, so tuning against it will produce real data.
-5. **Measure power on battery.** The bench ran on USB, so its battery figures are
+6. **Measure power on battery.** The bench ran on USB, so its battery figures are
    meaningless. Sustained-refresh cost on a 650 mAh cell is the last open hardware risk.
 
 ## Known gaps
