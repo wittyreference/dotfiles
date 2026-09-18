@@ -1,114 +1,144 @@
 # Status and handoff
 
-Last updated: **2026-07-26**. Written so a fresh session — or a fresh person — can pick this up without re-deriving anything.
+Last updated **2026-09-18**, after the first hardware session. Written so a fresh session
+can resume without re-deriving anything.
 
-## Read these first, in order
+## Read first
 
-1. [`README.md`](../README.md) — what inkflow is, and its **Honest status** section, which is the contract for what is and isn't true yet.
-2. [`CONTRIBUTING.md`](../CONTRIBUTING.md) — TDD discipline, the engine's hard constraints, and the license boundary. Read before borrowing any code.
-3. [`docs/PLATFORM-MATRIX.md`](PLATFORM-MATRIX.md) — the X4 as a target: hardware, flashing, firmware comparison.
-4. [`docs/FEATURE-SURVEY.md`](FEATURE-SURVEY.md) — what other RSVP readers do, what the comprehension research says, and per-project reuse rights.
+1. This document.
+2. [`REFRESH-MEASUREMENTS.md`](REFRESH-MEASUREMENTS.md) — the measured panel numbers that
+   decide the product's shape. Everything about chunking follows from them.
+3. [`../CONTRIBUTING.md`](../CONTRIBUTING.md) — TDD discipline, engine constraints, the
+   license boundary.
+4. [`PLATFORM-MATRIX.md`](PLATFORM-MATRIX.md) and [`FEATURE-SURVEY.md`](FEATURE-SURVEY.md)
+   for background; both have been corrected against hardware and say so inline.
+
+`LOCKED-UNIT.md` is **superseded** and carries a banner saying so. The unit is not locked.
+
+## Where things are
+
+| | |
+|---|---|
+| Repo | `/Users/michael/inkflow` — a clone of `wittyreference/dotfiles`; the project is the `inkflow/` subdirectory |
+| Branch | `claude/xteink-x4-rsvp-reader-212m18` |
+| Golden flash backup | `~/inkflow-backups/x4-stock-golden-20260918T015022Z.bin`, sha256 `4e512a0b02b9bfa2451d998d553422644b4ca6c902e7391dc07fe84a3ef04bc2` |
+| Test book | `~/inkflow-books/agents.rsvp` (1.4 MB, 98,633 tokens) and `agents.txt` |
+| Host toolchain | `./scripts/setup-host.sh` installs esptool and PlatformIO into `~/.inkflow-tools` |
+
+**The golden backup is the only stock X4 image that exists anywhere as far as this
+project can tell. Nothing in the repo protects it. Copy it somewhere durable.**
+
+## The device
+
+An **unlocked** Xteink X4. Confirmed by reading it, not inferred:
+
+```
+ESP32-C3, RISC-V, 160MHz, 400KB SRAM, no PSRAM
+16MB flash, manufacturer 0x85, device 0x2018
+MAC 14:63:93:f6:82:4c
+USB JTAG/serial debug unit, VID 0x303a PID 0x1001 -> /dev/cu.usbmodem1101
+
+SECURE_BOOT_EN        False        SPI_BOOT_CRYPT_CNT   Disable
+DIS_USB_SERIAL_JTAG   Enable       DIS_DOWNLOAD_MODE    False
+WR_DIS 0              RD_DIS 0     -- nothing is burned
+```
+
+Partition table read out of the backup is byte-for-byte identical to
+`crosspoint-reader/partitions.csv`. `app0` is at `0x10000`, and `otadata` says the device
+boots from it.
+
+## Three things that will waste a session if unknown
+
+**1. Always pass `--after no-reset` to esptool.** The stock firmware does not keep
+USB-Serial/JTAG alive once it boots, so any command ending in `Hard resetting via RTS
+pin` takes the connection away and costs a power-cycle. Custom firmware built with
+`ARDUINO_USB_CDC_ON_BOOT=1` *does* hold USB up, so this matters most when stock is on.
+
+**2. `build_unflags = -std=gnu++11` is load-bearing.** rsvp-core is C++17; the
+Arduino-ESP32 default is C++11, under which a `constexpr` function must be a single
+return statement, and the engine will not compile.
+
+**3. Never construct a `WebServer` (or anything needing the Arduino core) as a global.**
+Its constructor runs before `setup()` and before `Serial.begin`, and the result is a hang
+with no serial output and no display — indistinguishable from dead hardware. It cost most
+of an evening. `transfer.h` constructs it lazily in `begin()`.
 
 ## What exists
 
-`rsvp-core` is complete for the engine layer and fully tested — **84 test cases, 386 assertions, 22 end-to-end CLI checks, all green.** Built strictly test-first.
+| Component | State |
+|---|---|
+| `core/` — rsvp-core | Tokenizer, boundary flags, ORP pivot, timing model, chunker, player, `.rsvp` format. **90 cases, 377 assertions, green** |
+| `tools/rsvp-mk/` | text/Markdown to `.rsvp`. Works |
+| `tools/epub-to-text/` | EPUB to text, spine order preserved. Works |
+| `bench/eink-bench/` | Panel measurement firmware. **Run; results in `hardware-notes/`** |
+| `sim/` | Desktop renderer, **exits non-zero on layout overflow** |
+| `firmware/reader/` | The reader. Streams `.rsvp` from SD, WiFi transfer, resume. **Built for landscape but NOT yet flashed** |
 
-| Piece | File | State |
-|---|---|---|
-| Tokenizer + boundary classification | `core/src/tokenizer.cpp` | Done |
-| ORP pivot | `core/src/orp.cpp` | Done. Banding matches `pasky/speedread` exactly |
-| Timing model | `core/src/timing.cpp` | Done. Boundary pauses, length bonus, numerals, WPM ramp, refresh floor |
-| Playback state machine | `core/src/player.cpp` | Done. Pause, rewind-by-sentence, fingerprinted resume |
-| `.rsvp` container | `core/src/format.cpp` | Done. Versioned, CRC-checked, forward-compatible, alignment-safe |
-| Host converter | `tools/rsvp-mk/` | Working for TXT and Markdown |
-| Desktop simulator | `sim/` | **Not started** |
-| E-ink benchmark | `bench/eink-bench/` | **Not started** — needs hardware |
-
-```sh
-cmake -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build -j
-ctest --test-dir build --output-on-failure
-./build/tools/rsvp-mk/rsvp_mk docs/PLATFORM-MATRIX.md --wpm 400
-```
-
-## What has never happened
-
-**Nothing has run on an Xteink X4.** Not once. Every words-per-minute number in this repo is arithmetic, not measurement. `TimingConfig::minHoldMs` defaults to 0 because nobody has measured what it should be. No one has watched this render a single word.
-
-That is the entire reason the next phase needs hardware.
-
-## Next phase — on a machine with the device attached
-
-### Phase 0: safety, in this order
-
-**1. Determine locked vs unlocked.** Connect a **data** USB-C cable (charge-only cables are the most common time-waster here) and look for the serial port. On macOS:
+Host tests are compiled directly with `c++` rather than CMake (cmake was not installed
+initially; it is now). See any recent commit for the exact invocation, e.g.
 
 ```sh
-ls /dev/cu.usbmodem*
+c++ -std=c++17 -O1 -Wall -Wextra -Wpedantic -Werror -Wconversion -Wsign-conversion \
+    -Wshadow -Wold-style-cast -Icore/include -Icore/tests \
+    core/tests/main.cpp core/tests/test_*.cpp core/src/*.cpp -o /tmp/core_tests && /tmp/core_tests
 ```
 
-A port appearing means **unlocked** — the ESP32-C3's USB Serial/JTAG is native CDC-ACM, so macOS needs no driver. Nothing appearing, after trying another cable and another port, means **locked**: stop, and read the locked-unit section of the platform matrix before doing anything else. A locked unit can be permanently stranded.
+## The measurements that shape everything
 
-**2. Golden image, before touching anything.** No public archive of a stock X4 image exists, so this dump is the only recovery path that is definitely yours.
+| | Median |
+|---|---|
+| Full refresh | **1958 ms** |
+| Partial, 40px band | **524 ms** |
+| Partial, 120px band | **542 ms** |
+| Partial, full screen | **704 ms** |
 
-```sh
-pipx install esptool     # or: pip install esptool
-PORT=$(ls /dev/cu.usbmodem* | head -1)
-esptool --chip esp32c3 --port "$PORT" --baud 460800 read-flash 0 16M x4-stock-golden.bin
-shasum -a 256 x4-stock-golden.bin | tee x4-stock-golden.bin.sha256
-```
+**Window size barely matters.** The panel's partial waveform is a fixed ~501 ms; only SPI
+transfer scales. A 20x area difference costs 34% more time. The plan's "key bet" on
+windowed partial updates was wrong.
 
-Takes roughly 25 minutes. **Copy it off the machine** — a backup that lives only next to the thing it backs up is not a backup. Books are never at risk either way; they live on the removable microSD and firmware only touches internal flash.
+**So chunking is mandatory.** At 542 ms: one word is 111 WPM, two is 221, three is 332.
+Comprehension holds at 250–350 WPM, so single-word RSVP is impossible on this panel.
 
-**3. Verify the restore path works** before relying on it. A backup you have never restored is a hypothesis.
+SPI contention between SD and EPD is a non-issue: 0.6 ms of 542. Timing is deterministic:
+p95 equals median across 100 updates.
 
-**4. First light.** Build and flash `open-x4-epaper/sample-firmware` unmodified, via PlatformIO. Nothing at stake, and it proves the whole toolchain.
+## Open problem: the panel froze
 
-### Phase 1: resolve the open hardware questions
+Late in the session the display stopped updating **even with the known-good community
+sample firmware flashed**, which rules out the reader firmware as the cause. The serial
+port has since reappeared, so the device is alive at the USB level.
 
-Cheap to answer with the device, impossible without it:
+Not yet established: whether the panel recovers on a full power-cycle, whether the
+battery was simply flat after an evening of sustained refreshing and WiFi, or whether
+something left the display controller in a bad state. `eink-bench` ends with
+`display.hibernate()`, which is a candidate worth ruling in or out.
 
-- **Panel dimensions.** This repo says 800×480 (Adafruit, corroborated by the 219 PPI arithmetic). `crossink-simulator` says 792×1040 portrait. Both cannot be right, and chunk-width limits depend on the answer.
-- **Secure boot / flash encryption.** Currently *inferred* off from behaviour, never confirmed. `espefuse.py summary` settles it.
-- **The locking mechanism** — eFuse versus a firmware-level USB disable. Nobody has published a test. Only matters if a locked unit turns up.
+**Next step is to establish a known-good baseline again** — flash the sample, power-cycle
+properly, confirm the panel draws — before flashing anything new. A mistake made this
+session was flashing three successively more complex firmwares without confirming each
+one rendered, which left it ambiguous which change broke things.
 
-### Phase 2: `eink-bench` — the measurement that decides the project
+## What to do next
 
-Build from `open-x4-epaper/sample-firmware`, write results to SD as CSV. Measure:
+1. **Recover the panel** and confirm the sample firmware draws.
+2. **Flash the landscape reader.** It is built but unflashed. Portrait overran the right
+   edge by 88 px; the simulator catches this now and landscape passes.
+3. **Transfer the book.** Press Right on the reader for WiFi transfer, join network
+   `inkflow` / `inkflow-reader`, open `http://192.168.4.1`, upload `agents.rsvp`, press
+   Back.
+4. **Read it, and tune from the experience.** Nobody has yet confirmed the pacing works.
+   That is the one question no amount of measurement answers.
+5. **Measure power on battery.** The bench ran on USB, so its battery figures are
+   meaningless. Sustained-refresh cost on a 650 mAh cell is the last open hardware risk.
 
-- Full refresh, partial refresh, and any fast/A2-style mono waveform the SSD1677 exposes.
-- **Windowed partial updates** — redrawing only an ~800×120 centre strip. This is the key bet: RSVP only needs to change one word.
-- Ghosting accumulation: how many windowed partials before contrast degrades.
-- Refresh latency with and without concurrent SD reads — **SD and EPD share the SPI bus.**
-- **Sustained current draw**, and projected battery life per configuration. Normal e-reading refreshes once per 30 s; RSVP refreshes several times per second on a 650 mAh cell.
+## Known gaps
 
-The target is more forgiving than it first appeared: the comprehension research puts the useful band at **250–350 WPM**, i.e. **171–240 ms per update**, and two-word chunks at 300 WPM relax it to 400 ms.
-
-Measurements become named calibration constants in `TimingConfig`, each citing the bench run that produced it. **These numbers do not exist anywhere publicly — publishing them is a contribution to the ecosystem regardless of whether inkflow ships.**
-
-### Phase 3: simulator
-
-Study [`uxjulia/crossink-simulator`](https://github.com/uxjulia/crossink-simulator) first — **MIT, C++, SDL2**. It compiles X4-family firmware natively, renders the panel in an SDL2 window, maps buttons to keys, and maps a host directory onto the device's `/books/` path. It's coupled to CrossInk so it isn't a drop-in, but it is the reference, and it is liftable.
-
-### Phase 4: device integration
-
-SUMI Lua app first (**MIT**, no flash risk, real panel), then the CrossPoint RSVP mode. **Open a CrossPoint issue before building the integration** — the repo has zero RSVP issues, so this introduces the idea rather than joining a discussion.
-
-## Open questions worth holding
-
-- **Should the length bonus be square-root instead of linear?** `speedread` uses `0.04 × √len`; we add 3% per character indefinitely, which is far more aggressive on long words. Square root is the more plausible shape, but changing it without measurement swaps one guess for another.
-- **Chunk timing** is unsettled in the field — `speeedy` scales linearly with chunk size, `speedread` applies a flat ×1.2. Decide before implementing chunking; `speeedy`'s is the defensible one.
-- **`speeedy`'s comprehension quiz** for setting a baseline WPM. Given the research, "is this speed actually working for me?" is the real question.
-
-## Repository situation
-
-Everything currently lives on branch `claude/xteink-x4-rsvp-reader-212m18` of `wittyreference/dotfiles`, under `inkflow/`. A standalone history — `inkflow/` contents at the repo root — is staged on the same remote as branch **`inkflow-main`**.
-
-To land it in its own repo from a machine with working credentials:
-
-```sh
-git clone -q --bare https://github.com/wittyreference/dotfiles.git d
-git -C d push https://github.com/wittyreference/inkflow.git inkflow-main:main
-rm -rf d
-```
-
-Add `--force` if the target repo was created with a README. This was blocked in the originating environment by a git-proxy repo allowlist, not by anything wrong with the history.
+- The reader has never displayed a real book. Everything is verified except the thing
+  itself.
+- Layout constants are duplicated between `sim/src/main.cpp` and
+  `firmware/reader/src/config.h`. They must be changed together; a divergent simulator is
+  worse than none.
+- `rsvp-mk` has no EPUB support; `tools/epub-to-text` covers it as a separate step.
+- Ghosting is unquantified — there is no sensor, only eyes.
+- The repo still lives inside `dotfiles`. `inkflow/scripts/publish-standalone.sh` extracts
+  it to its own repository and is re-runnable.
