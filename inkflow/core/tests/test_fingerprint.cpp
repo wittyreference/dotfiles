@@ -44,10 +44,10 @@ TEST_CASE("the fingerprint of a fixed token array is exactly this value") {
     // resuming. Nothing else in the suite catches that, because every other comparison
     // recomputes both sides and they move together. Only a literal can hold this still.
     //
-    // Derived independently from the algorithm fingerprint.hpp documents rather than
-    // read back out of the implementation: FNV-1a (basis 2166136261, prime 16777619)
-    // over the four little-endian bytes of each value, fed the token count and then
-    // offset, length, orp and flags for tokens 0, count/2 and count-1.
+    // Computed from the specification in fingerprint.hpp, which is normative: the
+    // fingerprint is on-disk format, so the header describes it in full and an
+    // independent implementation can reproduce it. This pin binds the code to that
+    // specification, so a drift in either one is caught by the other.
     //
     // If this fails, the container's version must go up and existing files must be
     // migrated. Updating the number is not a fix.

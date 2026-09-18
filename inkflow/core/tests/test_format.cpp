@@ -187,6 +187,40 @@ TEST_CASE("a text blob that starts inside the token array is rejected") {
     CHECK(rsvp::readRsvpHeader(built.bytes(), built.size, header) == rsvp::RsvpStatus::kTruncated);
 }
 
+TEST_CASE("a text blob that starts before the token array is rejected") {
+    // The other side of the same guard, and the dangerous one. A textOffset BELOW the
+    // header makes textEnd - headerSize underflow in verifyRsvpChecksum, so the CRC walks
+    // off the end of the buffer and the process dies. The case above only covers an
+    // offset above headerSize, so narrowing the guard to a range check would leave this
+    // reachable with the whole suite still green.
+    auto built = build(kText);
+
+    const std::uint32_t before = 0u;
+    const std::uint32_t noText = 0u;
+    std::memcpy(built.bytes() + 12u, &before, sizeof(before));
+    std::memcpy(built.bytes() + 16u, &noText, sizeof(noText));
+
+    rsvp::RsvpHeader header{};
+    CHECK(rsvp::readRsvpHeader(built.bytes(), built.size, header) == rsvp::RsvpStatus::kTruncated);
+
+    // And the checksum path must refuse it too rather than reading out of bounds.
+    CHECK(rsvp::verifyRsvpChecksum(built.bytes(), built.size) == rsvp::RsvpStatus::kTruncated);
+}
+
+TEST_CASE("a token count that would overflow the address space is rejected") {
+    // 0x1FFFFFFF tokens is 0xFFFFFFF8 bytes. That survives the multiply-overflow check,
+    // and on the ESP32-C3 -- where size_t is 32 bits -- adding the 32-byte header wraps
+    // it round to 24, which is smaller than the file. The bound is therefore written as a
+    // subtraction from the size rather than an addition compared against it.
+    auto built = build(kText);
+
+    const std::uint32_t absurd = 0x1FFFFFFFu;
+    std::memcpy(built.bytes() + 8u, &absurd, sizeof(absurd));
+
+    rsvp::RsvpHeader header{};
+    CHECK(rsvp::readRsvpHeader(built.bytes(), built.size, header) == rsvp::RsvpStatus::kTruncated);
+}
+
 TEST_CASE("a buffer too small to even hold a header is rejected") {
     std::vector<std::uint32_t> tiny(2u, 0u);
     rsvp::RsvpHeader header{};

@@ -166,10 +166,23 @@ RsvpStatus readRsvpHeader(const unsigned char* data, std::size_t size, RsvpHeade
     if (tokenBytes / sizeof(Token) != header.tokenCount) {
         return RsvpStatus::kTruncated;
     }
-    const std::size_t tokenEnd = static_cast<std::size_t>(header.headerSize) + tokenBytes;
-    if (tokenEnd > size) {
+
+    // Every bound below is expressed as a subtraction from `size` rather than an addition
+    // compared against it, because an addition can wrap and a subtraction from a value
+    // already known to be large enough cannot.
+    //
+    // This is not hypothetical on the target. size_t is 32 bits on the ESP32-C3, and a
+    // header claiming 0x1FFFFFFF tokens yields 0xFFFFFFF8 token bytes, which passes the
+    // divide check above; adding the 32-byte header wraps to 24, which is smaller than
+    // any real file, so the check would pass and every read after it would run off the
+    // end of the buffer.
+    if (header.headerSize > size) {
         return RsvpStatus::kTruncated;
     }
+    if (tokenBytes > size - header.headerSize) {
+        return RsvpStatus::kTruncated;
+    }
+    const std::size_t tokenEnd = static_cast<std::size_t>(header.headerSize) + tokenBytes;
 
     // The text blob must start past the token array. A textOffset pointing into the
     // tokens satisfies every length check -- the region is inside the buffer -- so
@@ -178,9 +191,10 @@ RsvpStatus readRsvpHeader(const unsigned char* data, std::size_t size, RsvpHeade
     if (static_cast<std::size_t>(header.textOffset) < tokenEnd) {
         return RsvpStatus::kTruncated;
     }
-    const std::size_t textEnd =
-        static_cast<std::size_t>(header.textOffset) + static_cast<std::size_t>(header.textLength);
-    if (header.textOffset > size || textEnd > size || textEnd < header.textOffset) {
+    if (header.textOffset > size) {
+        return RsvpStatus::kTruncated;
+    }
+    if (static_cast<std::size_t>(header.textLength) > size - header.textOffset) {
         return RsvpStatus::kTruncated;
     }
 
