@@ -11,7 +11,8 @@ set -uo pipefail
 # Never pushes to main. Never commits the flash image -- 16 MB of device-specific
 # firmware is gitignored on purpose.
 
-cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)" || exit 1
+INKFLOW_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$INKFLOW_DIR" || exit 1
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
     echo "Not a git checkout -- nothing to push."
     echo "Re-run the scripts from a clone rather than a downloaded copy."
@@ -40,7 +41,19 @@ if [ "$BRANCH" = "main" ] || [ "$BRANCH" = "master" ]; then
     echo
 fi
 
-NOTES="inkflow/hardware-notes"
+# --- notes path ---
+# inkflow is published two ways: as a subdirectory of the dotfiles monorepo, and --
+# via publish-standalone.sh -- as its own repo with inkflow/ contents at the root.
+# Derive the path from where this script actually sits. Hardcoding either layout makes
+# the other one report "nothing to push" and exit 0 with results sitting unpublished.
+NOTES="${INKFLOW_DIR#"$REPO_ROOT"/}"
+if [ "$NOTES" = "$INKFLOW_DIR" ]; then
+    NOTES="hardware-notes"          # inkflow is itself the repo root
+else
+    NOTES="$NOTES/hardware-notes"
+fi
+# --- end notes path ---
+
 if [ -z "$(git status --porcelain -- "$NOTES" 2>/dev/null)" ]; then
     echo "No new results in $NOTES -- nothing to push."
     exit 0

@@ -19,8 +19,14 @@ project reads them from GitHub.
 
 ```sh
 git clone https://github.com/wittyreference/dotfiles.git ~/inkflow
-pipx install esptool          # or: pip3 install esptool
+cd ~/inkflow/inkflow && ./scripts/setup-host.sh
 ```
+
+`setup-host.sh` puts esptool, espefuse and PlatformIO in venvs under `~/.inkflow-tools`
+so nothing touches system python. They are deliberately **not** added to `PATH` — every
+script here looks in that directory itself, so there is nothing to export and nothing to
+remember. Setting `$ESPTOOL`, `$ESPEFUSE` or `$PIO` overrides the search if you keep
+your own build elsewhere.
 
 `main` is fine to sit on — the scripts move their own results onto a `hw-results`
 branch rather than committing to the default branch, so you never have to think about
@@ -51,8 +57,8 @@ pushes it. Takes seconds.
 ./scripts/01-backup.sh
 ```
 
-Also read-only against the device. Prompts first, takes ~25 minutes, then pushes the
-manifest.
+Also read-only against the device. Prompts first, takes about a minute at 460800 baud
+over native USB, then pushes the manifest.
 
 **Step 3 — keep the image.** The `.bin` is gitignored deliberately: 16 MB of
 device-specific firmware doesn't belong in a repo. Nothing moves it off that machine
@@ -60,8 +66,31 @@ except you, and **no public archive of a stock X4 image exists**, so this file i
 only restore path that is definitely yours.
 
 ```sh
-cp hardware-notes/x4-stock-golden-*.bin ~/somewhere-durable/
+cp hardware-notes/x4-stock-golden-*.bin* ~/somewhere-durable/
 ```
+
+Copy the `.sha256` sidecar with it. `03-restore.sh` refuses to write an image it cannot
+check, and an unverified golden image is a guess rather than a restore path.
+
+**Step 4 — flash.** Writes the reader firmware to app0 at `0x10000` and verifies it:
+
+```sh
+./scripts/02-flash.sh                      # the reader's own build output
+./scripts/02-flash.sh path/to/firmware.bin
+```
+
+The bootloader, partition table, nvs and spiffs are never addressed, so a bad
+application image costs a reflash and nothing more. It refuses any file that doesn't
+start with the `0xE9` ESP image magic, and asks before writing.
+
+**Step 5 — restore, if needed.** Puts the golden stock image back:
+
+```sh
+./scripts/03-restore.sh                    # newest golden image found
+```
+
+Verifies the image against its `.sha256` sidecar *before* writing, and refuses on a
+mismatch — writing an unverified image to `0x0` would take the bootloader with it.
 
 ## If pushing fails
 
@@ -81,16 +110,37 @@ hour here.
 
 | Script | What it does | Writes to device? |
 |---|---|:-:|
+| `setup-host.sh` | Installs esptool, espefuse and PlatformIO into `~/.inkflow-tools` | **No** |
 | `00-probe.sh` | Detects the port; reads chip id, flash id, MAC, and the eFuse summary | **No** |
 | `01-backup.sh` | Golden 16 MB flash dump plus checksum and manifest | **No** |
+| `02-flash.sh` | Writes an application image to app0 at `0x10000`, then verifies | **Yes**, app0 only |
+| `03-restore.sh` | Writes a checksum-verified golden image back over the whole flash | **Yes**, all of it |
 
 Run them in order. `00-probe.sh` first is not ceremony: it tells you whether the unit
 is locked, and a locked unit must not be flashed with anything before you have read
 `docs/PLATFORM-MATRIX.md` §2 — it cannot be backed up over USB and can be stranded
 permanently.
 
-Both scripts are strictly read-only against the device. Every `esptool` subcommand
-they use reads; none erase, write, or burn an eFuse. Nothing here can brick anything.
+`00-probe.sh` and `01-backup.sh` are strictly read-only against the device. Every
+`esptool` subcommand they use reads; none erase, write, or burn an eFuse. Don't run
+either of the writing scripts until `01-backup.sh` has produced an image and you have
+copied it somewhere durable.
+
+No script here burns an eFuse, so nothing here is one-way.
+
+## The USB trap
+
+**Stock firmware drops USB-Serial/JTAG the moment it boots.** Measured, not inferred:
+after a command that ended in a hard reset, the device vanished from USB entirely — not
+just the serial node — and did not come back until it was unplugged and power-cycled.
+
+So every `esptool` and `espefuse` invocation in these scripts passes `--after no-reset`,
+which leaves the chip sitting in the bootloader with the connection alive. That is why
+a probe, a backup and an eFuse read can run back-to-back without touching the device in
+between. If you run esptool by hand, pass it yourself or budget a power-cycle.
+
+Custom firmware built from `firmware/reader` keeps USB up after boot, so once you have
+flashed your own image the power-cycle dance stops.
 
 ## What comes back
 

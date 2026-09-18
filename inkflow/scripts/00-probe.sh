@@ -14,6 +14,18 @@ set -uo pipefail
 INKFLOW_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$INKFLOW_DIR" || exit 1
 
+# setup-host.sh installs esptool into a venv under ~/.inkflow-tools and deliberately
+# leaves it off PATH, so `command -v esptool` finds nothing on a correctly set up
+# machine. Honour an explicit override first, then that venv, then PATH.
+ESP_BIN_DIR="$HOME/.inkflow-tools/esp/bin"
+ESPTOOL="${ESPTOOL:-}"
+[ -n "$ESPTOOL" ] || [ ! -x "$ESP_BIN_DIR/esptool" ] || ESPTOOL="$ESP_BIN_DIR/esptool"
+[ -n "$ESPTOOL" ] || ESPTOOL="$(command -v esptool 2>/dev/null || true)"
+
+ESPEFUSE="${ESPEFUSE:-}"
+[ -n "$ESPEFUSE" ] || [ ! -x "$ESP_BIN_DIR/espefuse" ] || ESPEFUSE="$ESP_BIN_DIR/espefuse"
+[ -n "$ESPEFUSE" ] || ESPEFUSE="$(command -v espefuse 2>/dev/null || command -v espefuse.py 2>/dev/null || true)"
+
 OUT_DIR="hardware-notes"
 mkdir -p "$OUT_DIR"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -33,16 +45,21 @@ trap 'rm -f "$EFUSE_TMP"; publish' EXIT
 
 log() { printf '%s\n' "$*" >> "$REPORT"; }
 
-# esptool v5 hyphenated its subcommands; v4 used underscores. Try both rather than
-# pinning a version the operator may not have.
+# esptool v5 hyphenated its subcommands and its option values; v4 used underscores for
+# both. Try each spelling whole rather than pinning a version the operator may not have.
+#
+# --port and --after are GLOBAL options and must precede the subcommand; placed after
+# it, esptool v5 rejects them with "No such option". --after no-reset is not optional
+# either: the stock firmware drops USB-Serial/JTAG the moment it boots, so a command
+# that ends in a hard reset takes the connection away and costs a power-cycle.
 esp() {
     local sub="$1"; shift
-    esptool "$sub" "$@" 2>&1 || esptool "${sub//-/_}" "$@" 2>&1
+    "$ESPTOOL" --port "$PORT" --after no-reset "$sub" "$@" 2>&1 \
+        || "$ESPTOOL" --port "$PORT" --after no_reset "${sub//-/_}" "$@" 2>&1
 }
 efuse_tool() {
-    if command -v espefuse >/dev/null 2>&1; then espefuse "$@";
-    elif command -v espefuse.py >/dev/null 2>&1; then espefuse.py "$@";
-    else return 127; fi
+    [ -n "$ESPEFUSE" ] || return 127
+    "$ESPEFUSE" --port "$PORT" --after no-reset "$@"
 }
 
 echo "inkflow probe -- read-only, nothing is written to the device"
@@ -147,13 +164,15 @@ log "## Port"
 log ""
 log "\`$PORT\`"
 
-if ! command -v esptool >/dev/null 2>&1; then
+if [ -z "$ESPTOOL" ]; then
     log ""
-    log "**esptool not installed** -- chip, flash and eFuse sections skipped."
+    log "**esptool not found** -- chip, flash and eFuse sections skipped."
     cat <<MSG
 
-esptool is not installed. Install it and re-run:
-    pipx install esptool        # or: pip3 install esptool
+esptool was not found. Looked for \$ESPTOOL, then $ESP_BIN_DIR/esptool,
+then PATH. Install it and re-run:
+
+    ./scripts/setup-host.sh
 
 --------- PASTE THIS ---------
 probe: port $PORT found, esptool MISSING
@@ -168,14 +187,14 @@ log ""
 log "## esptool"
 log ""
 log '```'
-log "$(esptool version 2>&1 | head -1)"
+log "$("$ESPTOOL" version 2>&1 | head -1)"
 log '```'
 
 # --- chip / flash / mac -------------------------------------------------------
 echo "Reading chip id, flash id, MAC..."
-CHIP_OUT="$(esp chip-id --port "$PORT")"
-FLASH_OUT="$(esp flash-id --port "$PORT")"
-MAC_OUT="$(esp read-mac --port "$PORT")"
+CHIP_OUT="$(esp chip-id)"
+FLASH_OUT="$(esp flash-id)"
+MAC_OUT="$(esp read-mac)"
 
 for section in "chip-id:$CHIP_OUT" "flash-id:$FLASH_OUT" "read-mac:$MAC_OUT"; do
     log ""
@@ -192,7 +211,7 @@ done
 # out locked -- whether the lock is a burned eFuse or a firmware-level USB disable.
 # Nobody has published this for the X4. `summary` is read-only.
 echo "Reading eFuse summary..."
-if efuse_tool --port "$PORT" summary > "$EFUSE_TMP" 2>&1; then :; fi
+if efuse_tool summary > "$EFUSE_TMP" 2>&1; then :; fi
 log ""
 log "### eFuse summary"
 log ""
@@ -202,11 +221,16 @@ log '```'
 
 # --- digest -------------------------------------------------------------------
 field() {
-    # First matching eFuse line, trimmed. Absent field prints "not reported".
+    # First matching eFuse line as "NAME = value". espefuse puts a long description
+    # between the two, and the digest is read on a phone -- keeping the description
+    # pushes the value itself off the end of the line, which is the one part that
+    # matters. Absent field prints "not reported".
     local name="$1" line
     line="$(grep -m1 -E "^[[:space:]]*${name}[[:space:]]" "$EFUSE_TMP" 2>/dev/null)"
-    if [ -z "$line" ]; then printf 'not reported'; else
-        printf '%s' "$(printf '%s' "$line" | sed -E 's/[[:space:]]+/ /g' | cut -c1-72)"
+    if [ -z "$line" ]; then printf '%s = not reported' "$name"; else
+        printf '%s' "$(printf '%s' "$line" \
+            | sed -E 's/[[:space:]]+/ /g; s/^ //; s/^([^ ]+).*[[:space:]]=[[:space:]]/\1 = /' \
+            | cut -c1-72)"
     fi
 }
 
@@ -214,7 +238,8 @@ field() {
     echo
     echo "--------- PASTE THIS ---------"
     echo "port:  $PORT"
-    printf 'chip:  %s\n' "$(printf '%s' "$CHIP_OUT" | grep -m1 -iE '^chip is' || echo '?')"
+    # v5 prints "Chip type: ESP32-C3 ..."; v4 printed "Chip is ESP32-C3 ...".
+    printf 'chip:  %s\n' "$(printf '%s' "$CHIP_OUT" | grep -m1 -iE '^chip (is|type:)' || echo '?')"
     printf 'flash: %s\n' "$(printf '%s' "$FLASH_OUT" | grep -m1 -iE 'detected flash size' || echo '?')"
     printf 'mfr:   %s\n' "$(printf '%s' "$FLASH_OUT" | grep -m1 -iE 'manufacturer' || echo '?')"
     echo "-- eFuses that matter --"
@@ -226,5 +251,5 @@ field() {
     echo
     echo "Full report: $REPORT"
     echo
-    echo "Next: ./scripts/01-backup.sh    # golden flash dump, ~25 min"
+    echo "Next: ./scripts/01-backup.sh    # golden flash dump, about a minute"
 } | tee -a /dev/null
