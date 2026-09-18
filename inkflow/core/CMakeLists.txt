@@ -7,6 +7,7 @@ add_library(rsvp_core STATIC
     src/timing.cpp
     src/player.cpp
     src/fingerprint.cpp
+    src/chunker.cpp
     src/format.cpp
 )
 
@@ -30,6 +31,8 @@ add_executable(rsvp_core_tests
     tests/test_timing.cpp
     tests/test_token_flags.cpp
     tests/test_integration.cpp
+    tests/test_calibration.cpp
+    tests/test_chunker.cpp
     tests/test_player.cpp
     tests/test_format.cpp
 )
@@ -54,6 +57,7 @@ add_library(rsvp_core_freestanding STATIC
     src/timing.cpp
     src/player.cpp
     src/fingerprint.cpp
+    src/chunker.cpp
     src/format.cpp
 )
 

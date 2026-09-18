@@ -63,8 +63,8 @@ This is the section that determines whether this project is possible at all.
 | Flash unsigned code over USB | **Yes** — plain `esptool --chip esp32c3` | [Adafruit](https://learn.adafruit.com/circuitpython-on-the-xteink-x4-ereader/install-circuitpython) | High |
 | Bootloader-entry ritual needed | **No.** Adafruit: *"You do not need to put the Xteink X4 eReader into bootloader mode"* | [Adafruit](https://learn.adafruit.com/circuitpython-on-the-xteink-x4-ereader/install-circuitpython) | High |
 | Full 16 MB read/write/verify | **Yes** | [aimindseye docs](https://github.com/aimindseye/xteink-x4/blob/main/docs/backup-and-restore.md) | High |
-| Secure boot enabled | **No** (inferred) | Plaintext dumps restore; unsigned third-party binaries boot; CircuitPython + Rust + 7 firmwares all run. ESP32-C3 Secure Boot v2 would reject every one | **Med** — no source states it literally |
-| Flash encryption enabled | **No** (same inference) | as above | **Med** |
+| Secure boot enabled | **No** — measured | `SECURE_BOOT_EN = False` read from the device's eFuses on 2026-09-18 | **High** — confirmed on hardware |
+| Flash encryption enabled | **No** — measured | `SPI_BOOT_CRYPT_CNT = Disable (0b000)` read from the device | **High** — confirmed on hardware |
 | Stock OTA verifies signatures | **No.** The community unlocker DNS-spoofs `api-prod.xteink.cn` over **plain HTTP** and stock installs the substituted image | [unlocker-tool](https://github.com/crosspoint-reader/crosspoint-tools/tree/master/unlocker-tool) · [issue #1918](https://github.com/crosspoint-reader/crosspoint-reader/issues/1918) · [HN](https://news.ycombinator.com/item?id=48048564) | High |
 | ROM bootloader always reachable | **Yes** — USB Serial/JTAG, the hardware escape hatch | [Adafruit](https://learn.adafruit.com/circuitpython-on-the-xteink-x4-ereader/install-circuitpython) | High |
 | SD-card `update.bin` path | Yes via OEM loader (hold power + Up), but **unreliable from X4 stock** | [pocketink FAQ](https://pocketink.io/firmware/faq/) — secondary | Med |
@@ -226,12 +226,13 @@ Xteink publicly **partnered** with the CrossPoint project on 2026-06-21 after in
 
 ## Unverified — the honest gap list
 
-- Secure boot / flash encryption are *inferred* off, never stated. Confirm with `espefuse summary` on a real unit.
+- ~~Secure boot / flash encryption are *inferred* off~~ — **CLOSED 2026-09-18.** Measured: `SECURE_BOOT_EN=False`, `SPI_BOOT_CRYPT_CNT=Disable`. All relevant eFuses unburned.
 - The locking mechanism: eFuse versus firmware-level USB-CDC disable. Distinguishable by test; nobody has published one.
-- Flash chip and PMIC part numbers; whether the ESP32-C3 is a bare QFN or a WROOM-type module.
+- ~~Flash chip part number~~ — **CLOSED 2026-09-18.** Flash manufacturer `0x85`, device `0x2018`, 16 MB. PMIC part number and QFN-vs-module still unverified (needs a teardown).
 - No FCC filing found for the base X4 (only `2BTR9-X4PRO` for the Pro, per a secondary source).
 - Latest stock firmware version — 3.1.0 is the only number referenced anywhere, from the AI-generated gist. Low confidence.
 - OTA support in most community firmwares — unverified, and it's the field that determines reversibility on locked units.
 - Whether `r/xteinkereader` exists.
-- **No measured SSD1677 refresh or power numbers exist anywhere.** This is the gap inkflow's `eink-bench` is built to close.
-- **Panel dimensions are in conflict and need checking on hardware.** This document says 800×480, from Adafruit and corroborated by arithmetic — 800×480 across 4.26" is ~219 PPI, matching every review. But `crossink-simulator`'s README gives the X4 as **792×1040 portrait** (and the X3 as 792×528 landscape). Both cannot be right. It matters, because the usable width caps how many characters fit in a chunk at a legible size. Resolving it takes ten seconds with the device in hand.
+- ~~No measured SSD1677 refresh numbers exist anywhere~~ — **CLOSED 2026-09-18.** Full refresh 1958 ms; partial 524–704 ms depending on band, dominated by a fixed ~501 ms waveform. See [`REFRESH-MEASUREMENTS.md`](REFRESH-MEASUREMENTS.md). **Power draw remains unmeasured** — the run was on USB.
+- ~~Panel dimensions are in conflict~~ — **CLOSED 2026-09-18.** The driver declares `WIDTH=800, HEIGHT=480`, and the device is used rotated to 480×800 portrait. `crossink-simulator`'s 792×1040 is wrong. Original note follows.
+- (superseded) This document says 800×480, from Adafruit and corroborated by arithmetic — 800×480 across 4.26" is ~219 PPI, matching every review. But `crossink-simulator`'s README gives the X4 as **792×1040 portrait** (and the X3 as 792×528 landscape). Both cannot be right. It matters, because the usable width caps how many characters fit in a chunk at a legible size. Resolving it takes ten seconds with the device in hand.

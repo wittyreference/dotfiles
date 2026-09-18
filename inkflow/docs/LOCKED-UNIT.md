@@ -1,5 +1,23 @@
 # Working with a USB-locked X4
 
+> ## ⚠️ Superseded for this device — the unit is NOT locked
+>
+> This document was written on a wrong diagnosis. It concluded the unit was locked
+> because it did not enumerate over USB; in fact it was not connected or not powered
+> at the time. With the device genuinely attached it enumerates as an Espressif
+> `USB JTAG/serial debug unit`, esptool communicates with it fully, **and the golden
+> 16 MB backup has been taken**. Every relevant eFuse is unburned — secure boot off,
+> flash encryption off, `DIS_USB_SERIAL_JTAG` not set.
+>
+> See [`../hardware-notes/bringup-20260918.md`](../hardware-notes/bringup-20260918.md)
+> for the measured evidence.
+>
+> **Kept, not deleted**, because the locked-unit path is real for units that genuinely
+> are locked, and the reasoning below still applies to them. But none of it describes
+> this device, and the claims that a backup is impossible and that USB flashing is
+> gone are both false here.
+
+
 MC's unit is locked. This is the playbook for that case, which the rest of the docs
 assumed away. **Conclusion up front: a locked unit can still be a development target**,
 but the route and the safety rules are different, and one of them is load-bearing.

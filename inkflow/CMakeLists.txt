@@ -22,3 +22,4 @@ enable_testing()
 
 add_subdirectory(core)
 add_subdirectory(tools/rsvp-mk)
+add_subdirectory(bench)

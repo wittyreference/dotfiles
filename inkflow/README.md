@@ -78,8 +78,8 @@ What is true today:
 
 What is **not** true yet, and will not be claimed until it is:
 
-- **Nothing has run on an Xteink X4. No firmware, no integration, not once.**
-- **No refresh-latency or power-draw measurements exist.** Every statement in this repo about achievable WPM is arithmetic, not observation. `TimingConfig::minHoldMs` currently defaults to 0 because nobody has measured what it should be.
+- No *reader* has run on the device. The measurement firmware has; the RSVP engine has not been integrated into anything that displays words.
+- **Power draw is still unmeasured.** The bench ran on USB power, so the battery numbers in its output mean nothing. Sustained-refresh cost on a 650 mAh cell is the last open risk.
 - There is no simulator, so nobody has *watched* this render a word.
 - EPUB, HTML, and PDF ingest are not implemented — only plain text and Markdown.
 - Markdown handling is a deliberately minimal line-oriented stripper, not a real parser. It handles headings, lists, blockquotes, emphasis, inline code, links, images, fenced code, and rules; anything more exotic passes through as text.
