@@ -1,14 +1,38 @@
 # Simulator
 
-Renders the reader's screens to PNG on a desktop, so layout can be looked at instead of
-read aloud off a device.
+Renders the reader's screens on a desktop, so layout and pacing can be looked at instead
+of read aloud off a device.
 
 ```sh
-c++ -std=c++17 -O1 -Ivendor -I../core/include src/main.cpp src/png.cpp ../core/src/*.cpp -lz -o sim
-./sim [text-file] [output-dir] [frames]
+cmake -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build
+./build/sim/sim [input] [output-dir] [frames] [--portrait] [--wpm n] [--no-png] [--gif path]
 ```
 
-Add `-DSIM_LANDSCAPE` to render the 800x480 landscape layout instead of 480x800 portrait.
+`input` is a `.rsvp` sidecar — streamed, exactly as the device reads one off the card —
+or a `.txt` small enough to tokenise into RAM; with neither it plays a built-in passage.
+`frames` is how many chunks to present, 0 for the whole document. Landscape is what the
+firmware ships, so landscape is what you get: `--portrait` renders the rejected layout,
+which must still overflow.
+
+## Watching a session instead of describing one
+
+`--gif path` writes the session as an animated GIF:
+
+```sh
+./build/sim/sim book.rsvp . 24 --no-png --gif reading.gif
+```
+
+Every frame is held for the reading loop's own `holdMs`, refresh time included, so the
+animation runs at the pace the device would. That is the whole point of it. Pacing is the
+one thing about this reader nobody has been able to confirm without power-cycling a
+device and narrating the panel, and an animation at any other speed would be worse than
+none — it would look like evidence. GIF counts delay in hundredths of a second and most
+viewers clamp anything under about 2cs to a default rate, but a hold is around 54cs, so
+nothing here is near that floor.
+
+Each frame carries the whole screen rather than a diff of the reading band. At one bit
+per pixel the file is small either way — 24 frames of 800x480 comes to 68 KB — and
+a frame that shows the whole screen is a frame that can be trusted.
 
 ## It is a test, not a viewer
 
@@ -31,10 +55,12 @@ over the same vendored font data the firmware compiles in. Reimplemented rather 
 linked because the library is entangled with Arduino headers, and the part that matters
 is forty lines of bit-walking.
 
-Chunking, pivot selection and hold timing come from `rsvp-core` itself, not a copy. What
-differs from the device is only the panel: no refresh latency, no ghosting, no partial
-update. Those need hardware, which is what `bench/eink-bench` is for.
+Chunking, pivot selection and hold timing come from `rsvp-core`, and the reading loop
+itself from `rsvp-reader`; the firmware links the same two libraries rather than a copy
+of either. `panel.hpp` supplies what is left: it charges the measured cost of every full
+and partial refresh and counts the partials since the last flush, from the least-squares
+fit over `hardware-notes/eink-bench-20260918.csv`.
 
-**The layout constants are duplicated from `firmware/reader/src/config.h`.** If they
-drift, the simulator will confidently show a layout the device does not produce, which
-is worse than having no simulator. Change them together.
+**What that model cannot do is surprise you.** It reproduces timings that were measured
+once, on one panel, at one temperature, and it draws no ghosting it is not told to count.
+Real hardware is what `bench/eink-bench` is for.

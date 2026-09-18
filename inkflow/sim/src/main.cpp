@@ -1,13 +1,15 @@
 // ABOUTME: Runs the shipped reading loop against a simulated panel and writes the frames
-// ABOUTME: to PNG, exiting non-zero when the layout overflows or ghosting never clears.
+// ABOUTME: out, exiting non-zero when the layout overflows or ghosting never clears.
 
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "file_source.hpp"
+#include "gif.hpp"
 #include "panel.hpp"
 #include "reader/document.hpp"
 #include "reader/reader.hpp"
@@ -26,13 +28,15 @@ const char kFallback[] =
 void usage() {
     std::fputs(
         "usage: sim [input] [output-dir] [frames] [--portrait] [--wpm n] [--no-png]\n"
+        "           [--gif path]\n"
         "\n"
         "  input        .rsvp sidecar (streamed, as the device does) or .txt\n"
         "  output-dir   where frame-NN.png files are written\n"
         "  frames       how many chunks to present, 0 for the whole document\n"
         "  --portrait   render the layout that was rejected, which must overflow\n"
         "  --wpm n      requested reading speed, default 330\n"
-        "  --no-png     run the reading loop without writing images\n",
+        "  --no-png     run the reading loop without writing images\n"
+        "  --gif path   write the session as an animated GIF at its real pace\n",
         stderr);
 }
 
@@ -64,6 +68,7 @@ int main(int argc, char** argv) {
     const reader::Layout* layout = &reader::kLandscape;
     const char* input = nullptr;
     const char* outDir = ".";
+    const char* gifPath = nullptr;
     uint32_t frames = 12;
     uint16_t wpm = 330;
     bool writePng = true;
@@ -79,6 +84,12 @@ int main(int argc, char** argv) {
             layout = &reader::kPortrait;
         } else if (std::strcmp(a, "--no-png") == 0) {
             writePng = false;
+        } else if (std::strcmp(a, "--gif") == 0) {
+            if (i + 1 >= argc) {
+                std::fputs("sim: --gif needs a path\n", stderr);
+                return 2;
+            }
+            gifPath = argv[++i];
         } else if (std::strcmp(a, "--wpm") == 0) {
             if (i + 1 >= argc) {
                 std::fputs("sim: --wpm needs a value\n", stderr);
@@ -149,6 +160,17 @@ int main(int argc, char** argv) {
 
     r.renderFull();
 
+    // Every frame in the animation is a presented chunk. The opening full refresh is not
+    // one and has no hold time of its own, so the GIF starts where the reading does.
+    std::unique_ptr<sim::GifWriter> gif;
+    if (gifPath != nullptr) {
+        gif.reset(new sim::GifWriter(gifPath, layout->width, layout->height));
+        if (!gif->ok()) {
+            std::fprintf(stderr, "sim: cannot write %s\n", gifPath);
+            return 1;
+        }
+    }
+
     uint32_t overflows = 0;
     uint32_t presented = 0;
     uint32_t words = 0;
@@ -161,6 +183,12 @@ int main(int argc, char** argv) {
             std::snprintf(path, sizeof(path), "%s/frame-%02u.png", outDir, presented);
             panel.writePng(path);
         }
+        // The hold is the reader's own, refresh time included, so the animation plays at
+        // the pace the device would.
+        if (gif && !gif->addFrame(panel.canvas(), frame.holdMs)) {
+            std::fprintf(stderr, "sim: cannot write frame %u to %s\n", presented, gifPath);
+            return 1;
+        }
         std::printf("  %2u  %u words  hold %4u ms  x=[%d,%d]%s%s  \"%s\"\n", presented,
                     frame.tokens, frame.holdMs, frame.left, frame.right,
                     frame.fullRefresh ? "  FULL" : "",
@@ -171,6 +199,14 @@ int main(int argc, char** argv) {
         words += frame.tokens;
         holdTotal += frame.holdMs;
         ++presented;
+    }
+
+    if (gif) {
+        if (!gif->finish()) {
+            std::fprintf(stderr, "sim: cannot finish %s\n", gifPath);
+            return 1;
+        }
+        std::printf("\nwrote %u frames to %s\n", gif->frames(), gifPath);
     }
 
     const uint32_t delivered =

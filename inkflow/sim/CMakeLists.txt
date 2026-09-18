@@ -3,8 +3,9 @@
 
 find_package(ZLIB REQUIRED)
 
-# The pixel canvas and the PNG writer, shared by the simulator and its tests.
-add_library(sim_canvas STATIC src/png.cpp)
+# The pixel canvas and its writers -- PNG for a single screen, GIF for a session played
+# at its real pace -- shared by the simulator and its tests.
+add_library(sim_canvas STATIC src/png.cpp src/gif.cpp)
 target_include_directories(sim_canvas PUBLIC src vendor)
 target_link_libraries(sim_canvas PUBLIC rsvp_reader ZLIB::ZLIB)
 
@@ -17,6 +18,7 @@ target_link_libraries(sim PRIVATE sim_canvas)
 add_executable(reader_tests
     ${CMAKE_SOURCE_DIR}/core/tests/main.cpp
     tests/test_reader.cpp
+    tests/test_gif.cpp
 )
 target_include_directories(reader_tests PRIVATE ${CMAKE_SOURCE_DIR}/core/tests)
 target_link_libraries(reader_tests PRIVATE sim_canvas)
