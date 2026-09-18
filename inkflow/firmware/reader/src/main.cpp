@@ -60,6 +60,23 @@ static void setDocumentName(const char* name) {
     g_reader.setName(g_docName);
 }
 
+// Nothing is printed and nothing is drawn until loadDocument() returns, so a long walk of
+// the card's root is indistinguishable from a hang: a card holding neither a .rsvp nor a
+// .txt walked its entire root for 108 seconds in silence on hardware.
+//
+// So the scan reports progress and stops. Progress goes on a time interval rather than
+// every N entries because the symptom is silence -- an interval puts a line on the port
+// every two seconds however slow the card is, where a count stays quiet for as long as a
+// slow card takes to grind through it. Per-entry logging would flood the port at 115200
+// baud and the printing would itself slow the scan.
+//
+// The stop is counted in entries, not seconds, because a limit in entries is a limit on
+// what can be missed: 4000 root entries is room for a thousand books and their sidecars,
+// doubled again for the AppleDouble twins a Mac leaves beside every file it copies to a
+// card. A root larger than that is a scratch card, not a reader's shelf.
+static constexpr uint32_t kScanReportMs = 2000u;
+static constexpr uint32_t kScanMaxEntries = 4000u;
+
 /// Opens the first .rsvp on the card, else the first .txt, else the built-in passage.
 ///
 /// .rsvp is preferred because it streams: a real book is far past what RAM holds, and
@@ -74,6 +91,8 @@ static void loadDocument() {
 
     File root = SD.open("/");
     if (root) {
+        uint32_t scanned = 0;
+        uint32_t reportedAt = millis();
         for (File f = root.openNextFile(); f; f = root.openNextFile()) {
             const char* name = f.name();
             const size_t n = strlen(name);
@@ -87,6 +106,20 @@ static void loadDocument() {
             f.close();
             if (bestIsSidecar) {
                 break;
+            }
+            // Announced rather than silent: a truncated scan that said nothing would be
+            // indistinguishable from an empty card, and whatever .txt was found before
+            // the limit is still the document about to be opened.
+            if (++scanned >= kScanMaxEntries) {
+                Serial.printf("inkflow: sd scan stopped at %u entries\n",
+                              static_cast<unsigned>(scanned));
+                break;
+            }
+            const uint32_t now = millis();
+            if (now - reportedAt >= kScanReportMs) {
+                reportedAt = now;
+                Serial.printf("inkflow: scanning sd, %u entries\n",
+                              static_cast<unsigned>(scanned));
             }
         }
         root.close();
@@ -186,7 +219,11 @@ void setup() {
     // swapping the card does not drop the reader into a random paragraph of another book.
     // A position past the end of this document is ignored rather than honoured.
     g_prefs.begin("inkflow", false);
-    if (g_prefs.getString("doc", "") == String(g_docName)) {
+    // Guarded by isKey() because reading an absent key logs inside Preferences at ERROR
+    // level, and a first run has no saved position -- an error line for the normal case
+    // is what makes a real fault hard to spot in the log later. isKey() reaches NVS
+    // directly and says nothing; the comparison below is unchanged when the key is there.
+    if (g_prefs.isKey("doc") && g_prefs.getString("doc", "") == String(g_docName)) {
         g_reader.seek(g_prefs.getUInt("pos", 0u));
     }
 
