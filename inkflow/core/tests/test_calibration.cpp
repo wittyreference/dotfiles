@@ -3,6 +3,7 @@
 
 #include "vendor/doctest.h"
 
+#include "rsvp/chunker.hpp"
 #include "rsvp/timing.hpp"
 
 namespace {

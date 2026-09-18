@@ -3,6 +3,7 @@
 
 #include "convert.hpp"
 
+#include "rsvp/chunker.hpp"
 #include "rsvp/format.hpp"
 #include "rsvp/player.hpp"
 
@@ -171,11 +172,13 @@ int main(int argc, char** argv) {
     config.wpm = wpm;
     config.rampTokens = 0u;
 
+    // Estimated with chunking, because the device shows several words per display
+    // update. Summing per-token holds overstates a five-hour book as fifteen.
     const rsvp::Token* tokens = rsvp::rsvpTokens(file.data(), header);
     std::uint32_t totalMs = 0u;
     if (tokens != nullptr) {
-        rsvp::Player player(tokens, header.tokenCount, config);
-        totalMs = player.remainingMs();
+        totalMs = rsvp::chunkedDurationMs(tokens, header.tokenCount, config,
+                                          rsvp::ChunkConfig{});
     }
 
     std::printf("%s -> %s\n", inputPath, outputPath.c_str());
@@ -185,7 +188,8 @@ int main(int argc, char** argv) {
     if (stripMarkdown) {
         std::printf("  markdown  stripped\n");
     }
-    std::printf("  at %u wpm  %um %02us\n", wpm, totalMs / 60000u, (totalMs / 1000u) % 60u);
+    std::printf("  at %u wpm  %uh %02um  (3 words per update)\n", wpm, totalMs / 3600000u,
+                (totalMs / 60000u) % 60u);
 
     return 0;
 }

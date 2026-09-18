@@ -40,4 +40,46 @@ std::uint32_t chunkLength(const Token* tokens, std::uint32_t count, std::uint32_
     return taken;
 }
 
+std::uint32_t chunkHoldMs(const Token* tokens, std::uint32_t count, std::uint32_t start,
+                          std::uint32_t length, const TimingConfig& timing) noexcept {
+    if (tokens == nullptr || start >= count || length == 0u) {
+        return 0u;
+    }
+
+    // Sum with the floor and ceiling disabled: they bound a display update, and the
+    // update is the chunk, not the individual word.
+    TimingConfig unclamped = timing;
+    unclamped.minHoldMs = 0u;
+    unclamped.maxHoldMs = 0xFFFFu;
+
+    std::uint32_t total = 0u;
+    for (std::uint32_t i = 0u; i < length && start + i < count; ++i) {
+        total += holdMs(tokens[start + i], unclamped);
+    }
+
+    if (total > timing.maxHoldMs) {
+        total = timing.maxHoldMs;
+    }
+    if (total < timing.minHoldMs) {
+        total = timing.minHoldMs;
+    }
+    return total;
+}
+
+std::uint32_t chunkedDurationMs(const Token* tokens, std::uint32_t count,
+                                const TimingConfig& timing,
+                                const ChunkConfig& chunking) noexcept {
+    std::uint32_t total = 0u;
+    std::uint32_t at = 0u;
+    while (at < count) {
+        const std::uint32_t n = chunkLength(tokens, count, at, chunking);
+        if (n == 0u) {
+            break;  // chunkLength only returns 0 out of range; guard against a hang.
+        }
+        total += chunkHoldMs(tokens, count, at, n, timing);
+        at += n;
+    }
+    return total;
+}
+
 }  // namespace rsvp

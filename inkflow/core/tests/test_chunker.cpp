@@ -123,3 +123,47 @@ TEST_CASE("the default config reflects the measured panel") {
     CHECK(cfg.maxWords == 3u);
     CHECK(cfg.maxChars >= 12u);
 }
+
+TEST_CASE("chunked duration is far shorter than a per-token sum") {
+    // rsvp-mk reported 891 minutes for a 98k-word book by summing per-token holds. With
+    // three words per update the honest figure is about a third of that. Estimating a
+    // five-hour book at fifteen hours is not a rounding error, it is the wrong answer.
+    const auto toks = tokenize(
+        "One two three. Four five six. Seven eight nine. Ten eleven twelve.");
+    rsvp::TimingConfig timing{};
+    timing.wpm = 330u;
+
+    std::uint32_t perToken = 0u;
+    for (const auto& t : toks) {
+        perToken += rsvp::holdMs(t, timing);
+    }
+
+    const std::uint32_t chunked =
+        rsvp::chunkedDurationMs(toks.data(), static_cast<std::uint32_t>(toks.size()),
+                                timing, rsvp::ChunkConfig{});
+
+    CHECK(chunked < perToken);
+    CHECK(chunked > perToken / 4u);
+}
+
+TEST_CASE("chunked duration of an empty document is zero") {
+    rsvp::TimingConfig timing{};
+    CHECK(rsvp::chunkedDurationMs(nullptr, 0u, timing, rsvp::ChunkConfig{}) == 0u);
+}
+
+TEST_CASE("a chunk carrying a sentence end is held longer than a plain one") {
+    // The boundary must be mid-document. The tokenizer flags the last token of any text
+    // as a paragraph end, and a paragraph pause outranks a sentence pause, so comparing
+    // two documents by their final chunk compares two paragraph pauses and proves
+    // nothing.
+    const auto plain = tokenize("aaa bbb ccc ddd eee fff");
+    const auto ending = tokenize("aaa bbb ccc. ddd eee fff");
+    rsvp::TimingConfig timing{};
+    rsvp::ChunkConfig cfg{};
+
+    const std::uint32_t a = rsvp::chunkedDurationMs(
+        plain.data(), static_cast<std::uint32_t>(plain.size()), timing, cfg);
+    const std::uint32_t b = rsvp::chunkedDurationMs(
+        ending.data(), static_cast<std::uint32_t>(ending.size()), timing, cfg);
+    CHECK(b > a);
+}
