@@ -27,6 +27,7 @@ public:
         reader_.drawStatus(s);
         reader_.drawGuides(s);
         reader_.drawChunk(s, frame_);
+        reader_.drawContext(s);
     }
 
 private:
@@ -124,8 +125,17 @@ uint32_t Reader::buildChunk(uint32_t start, Frame& out) const {
     // control -- requesting 200 wpm and requesting 400 both deliver about 300.
     out.holdMs = rsvp::chunkHoldMs(window, have, 0u, n, timing_);
 
-    // The pivot belongs to the chunk's first word, which is where the eye lands.
-    const uint8_t pivotChar = window[0].orp;
+    // The pivot belongs to the chunk's first word, which is where the eye lands. The
+    // offset is a reader's own adjustment to that, clamped so it can only ever name a
+    // character position rather than run off either end of the word.
+    int32_t pivot = static_cast<int32_t>(window[0].orp) + pivotOffset_;
+    if (pivot < 0) {
+        pivot = 0;
+    }
+    if (pivot > 255) {
+        pivot = 255;
+    }
+    const uint8_t pivotChar = static_cast<uint8_t>(pivot);
     const int16_t prefix = prefixWidth(out.text, pivotChar);
     const int16_t chunkWidth = surface_.textWidth(Font::kChunk, out.text);
 
@@ -161,6 +171,52 @@ uint32_t Reader::peek(Frame& out) const { return buildChunk(index_, out); }
 bool Reader::sentenceEndsAt(uint32_t index) const {
     const rsvp::Token* t = doc_.token(index);
     return t != nullptr && t->has(rsvp::kTokenFlagSentenceEnd);
+}
+
+size_t Reader::contextText(char* out, size_t cap) const {
+    if (out == nullptr || cap == 0) {
+        return 0;
+    }
+    out[0] = '\0';
+    const uint32_t count = doc_.count();
+    if (count == 0u || index_ >= count) {
+        return 0;
+    }
+
+    const uint32_t first = sentenceStart(index_);
+    const uint32_t last = sentenceEndAfter(index_);
+
+    size_t len = 0;
+    for (uint32_t i = first; i <= last && i < count; ++i) {
+        const rsvp::Token* t = doc_.token(i);
+        if (t == nullptr) {
+            break;
+        }
+        if (len > 0 && len + 1 < cap) {
+            out[len++] = ' ';
+        }
+        char word[64];
+        const size_t got = doc_.text(t->offset, t->length, word, sizeof(word));
+        for (size_t b = 0; b < got && len + 1 < cap; ++b) {
+            out[len++] = word[b];
+        }
+        // Stop cleanly on a full buffer rather than emitting a half word at the end.
+        if (len + 1 >= cap) {
+            break;
+        }
+    }
+    out[len] = '\0';
+    return len;
+}
+
+uint32_t Reader::sentenceEndAfter(uint32_t from) const {
+    const uint32_t count = doc_.count();
+    for (uint32_t i = from; i < count; ++i) {
+        if (sentenceEndsAt(i)) {
+            return i;
+        }
+    }
+    return count > 0u ? count - 1u : 0u;
 }
 
 uint32_t Reader::sentenceStart(uint32_t from) const {
@@ -210,6 +266,83 @@ void Reader::drawGuides(Surface& s) const {
            3, 16, Ink::kBlack);
     s.rect(static_cast<int16_t>(layout_.focalX - 1),
            static_cast<int16_t>(layout_.bandY + layout_.bandH + 10), 3, 16, Ink::kBlack);
+}
+
+void Reader::drawContext(Surface& s) const {
+    // Only while paused. During playback the space below the band stays empty on purpose:
+    // anything drawn there would be a second thing for the eye to travel to, which is the
+    // exact cost RSVP exists to remove.
+    if (playing_) {
+        return;
+    }
+
+    char sentence[320];
+    const size_t len = contextText(sentence, sizeof(sentence));
+    if (len == 0) {
+        return;
+    }
+
+    constexpr int16_t kMargin = 20;
+    constexpr int16_t kLineHeight = 30;
+    const int16_t usable = static_cast<int16_t>(layout_.width - 2 * kMargin);
+    int16_t y = static_cast<int16_t>(layout_.bandY + layout_.bandH + 50);
+
+    // Greedy wrap, measured through the same glyph walk that positions the chunk, so the
+    // break points are the ones the panel will actually produce rather than an estimate.
+    char line[320];
+    size_t lineLen = 0;
+
+    size_t at = 0;
+    while (at < len) {
+        const size_t wordStart = at;
+        while (at < len && sentence[at] != ' ') {
+            ++at;
+        }
+        const size_t wordLen = at - wordStart;
+        while (at < len && sentence[at] == ' ') {
+            ++at;
+        }
+        if (wordLen == 0) {
+            continue;
+        }
+
+        // Does this word still fit on the line being built?
+        char candidate[320];
+        size_t candidateLen = 0;
+        for (size_t i = 0; i < lineLen; ++i) {
+            candidate[candidateLen++] = line[i];
+        }
+        if (lineLen > 0 && candidateLen + 1 < sizeof(candidate)) {
+            candidate[candidateLen++] = ' ';
+        }
+        for (size_t i = 0; i < wordLen && candidateLen + 1 < sizeof(candidate); ++i) {
+            candidate[candidateLen++] = sentence[wordStart + i];
+        }
+        candidate[candidateLen] = '\0';
+
+        if (lineLen > 0 && s.textWidth(Font::kStatus, candidate) > usable) {
+            line[lineLen] = '\0';
+            s.text(Font::kStatus, kMargin, y, line);
+            y = static_cast<int16_t>(y + kLineHeight);
+            if (y > layout_.height) {
+                return;
+            }
+            lineLen = 0;
+            for (size_t i = 0; i < wordLen && lineLen + 1 < sizeof(line); ++i) {
+                line[lineLen++] = sentence[wordStart + i];
+            }
+        } else {
+            lineLen = candidateLen;
+            for (size_t i = 0; i < candidateLen; ++i) {
+                line[i] = candidate[i];
+            }
+        }
+    }
+
+    if (lineLen > 0 && y <= layout_.height) {
+        line[lineLen] = '\0';
+        s.text(Font::kStatus, kMargin, y, line);
+    }
 }
 
 void Reader::drawChunk(Surface& s, const Frame& frame) const {

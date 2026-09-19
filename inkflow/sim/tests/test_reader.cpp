@@ -253,6 +253,146 @@ TEST_CASE("ghosting is cleared within a bound even without paragraph breaks") {
     CHECK(panel.peakGhost() <= reader::kPartialsFlushDeadline);
 }
 
+TEST_CASE("pausing reveals the sentence the reader is inside") {
+    // Pausing is what a reader does when they have lost the thread. Showing the sentence
+    // they are inside answers that directly, and is cheaper than rewinding back through
+    // it -- the two complement each other rather than competing.
+    sim::Panel panel(reader::kLandscape);
+    reader::Document doc = makeDocument();
+    reader::Reader r(doc, panel, reader::kLandscape);
+    r.setTiming(timingAt(330));
+    r.setPlaying(true);
+
+    reader::Frame frame{};
+    for (int i = 0; i < 6; ++i) {
+        REQUIRE(r.step(frame));
+    }
+
+    char context[256];
+    const size_t n = r.contextText(context, sizeof(context));
+    CAPTURE(context);
+    REQUIRE(n > 0);
+
+    // The chunk on screen must appear inside the sentence being shown, or the context is
+    // context for somewhere else.
+    reader::Frame current{};
+    REQUIRE(r.peek(current) > 0);
+    const std::string sentence(context);
+    const std::string firstWord(current.text, std::strcspn(current.text, " "));
+    CHECK(sentence.find(firstWord) != std::string::npos);
+
+    // It is a sentence, not the whole document.
+    CHECK(sentence.size() < std::strlen(kProse));
+}
+
+TEST_CASE("context is bounded by the buffer it is given") {
+    sim::Panel panel(reader::kLandscape);
+    reader::Document doc = makeDocument();
+    reader::Reader r(doc, panel, reader::kLandscape);
+    r.setTiming(timingAt(330));
+
+    char tiny[8];
+    const size_t n = r.contextText(tiny, sizeof(tiny));
+    CHECK(n < sizeof(tiny));
+    CHECK(tiny[n] == '\0');
+
+    // A degenerate request must not write anywhere.
+    CHECK(r.contextText(nullptr, 100) == 0u);
+    char one[1];
+    CHECK(r.contextText(one, 0) == 0u);
+}
+
+TEST_CASE("the context is drawn only while paused") {
+    // Asserting on the text alone would pass even if nothing reached the panel. This
+    // counts actual ink below the reading band.
+    auto inkBelowBand = [](const sim::Panel& p) {
+        uint32_t dark = 0;
+        // Below the lower guide tick, which lives at bandH + 10 and is 16px tall. The
+        // ticks are meant to be there; counting them would be counting the wrong thing.
+        const int top = reader::kLandscape.bandY + reader::kLandscape.bandH + 30;
+        for (int y = top; y < reader::kLandscape.height; ++y) {
+            for (int x = 0; x < reader::kLandscape.width; ++x) {
+                if (p.canvas().pixel(x, y) == sim::kBlack) {
+                    ++dark;
+                }
+            }
+        }
+        return dark;
+    };
+
+    sim::Panel panel(reader::kLandscape);
+    reader::Document doc = makeDocument();
+    reader::Reader r(doc, panel, reader::kLandscape);
+    r.setTiming(timingAt(330));
+    r.setPlaying(true);
+
+    reader::Frame frame{};
+    for (int i = 0; i < 6; ++i) {
+        REQUIRE(r.step(frame));
+    }
+
+    // Playing: the space below the band stays empty, because a second thing to look at is
+    // the exact cost RSVP exists to remove.
+    r.renderFull();
+    CHECK(inkBelowBand(panel) == 0u);
+
+    // Paused: the sentence appears.
+    r.setPlaying(false);
+    r.renderFull();
+    CHECK(inkBelowBand(panel) > 0u);
+
+    // And it goes away again on resume, rather than lingering as ghost furniture.
+    r.setPlaying(true);
+    r.renderFull();
+    CHECK(inkBelowBand(panel) == 0u);
+}
+
+TEST_CASE("the pivot offset moves the recognition point") {
+    // The banded ORP heuristic is a default, not a law. A reader who wants the fixation
+    // a character earlier or later should be able to say so.
+    sim::Panel panel(reader::kLandscape);
+    reader::Document doc = makeDocument();
+    reader::Reader r(doc, panel, reader::kLandscape);
+    r.setTiming(timingAt(330));
+
+    reader::Frame neutral{};
+    REQUIRE(r.peek(neutral) > 0);
+
+    // A later pivot means more of the chunk sits left of the focal column, so the text
+    // starts further left on screen.
+    r.setPivotOffset(2);
+    reader::Frame later{};
+    REQUIRE(r.peek(later) > 0);
+    CHECK(later.left < neutral.left);
+
+    // And an earlier pivot pushes it right.
+    r.setPivotOffset(-1);
+    reader::Frame earlier{};
+    REQUIRE(r.peek(earlier) > 0);
+    CHECK(earlier.left > neutral.left);
+
+    // Whatever the offset, the chunk must still be the same words.
+    CHECK(std::string(later.text) == std::string(neutral.text));
+}
+
+TEST_CASE("an extreme pivot offset cannot push the text off the panel") {
+    sim::Panel panel(reader::kLandscape);
+    reader::Document doc = makeDocument();
+    reader::Reader r(doc, panel, reader::kLandscape);
+    r.setTiming(timingAt(330));
+    r.setPlaying(true);
+
+    for (int8_t offset : {int8_t(-120), int8_t(120)}) {
+        CAPTURE(offset);
+        r.seek(0);
+        r.setPivotOffset(offset);
+        reader::Frame f{};
+        REQUIRE(r.peek(f) > 0);
+        CHECK(f.left >= 0);
+        CHECK(f.right <= reader::kLandscape.width);
+    }
+}
+
 TEST_CASE("delivered pace tracks requested speed") {
     // The whole point of the speed buttons. A reader that ignores them is worse than one
     // without them, because it looks like it is responding.

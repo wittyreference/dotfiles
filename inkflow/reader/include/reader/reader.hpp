@@ -86,6 +86,21 @@ public:
 
     void adjustSpeed(int delta);
 
+    /// Shifts the recognition point within the chunk's first word, in characters.
+    ///
+    /// The banded ORP heuristic is a reasonable default, not a law -- where the eye
+    /// settles varies between readers, and the literature does not pin it precisely. A
+    /// signed nudge is cheap and lets a reader tune it rather than argue with it.
+    void setPivotOffset(int8_t characters) { pivotOffset_ = characters; }
+    int8_t pivotOffset() const { return pivotOffset_; }
+
+    /// Copies the sentence the reader is currently inside into `out`, NUL-terminated.
+    ///
+    /// Returns the number of bytes written. Shown while paused: pausing is what a reader
+    /// does when they have lost the thread, and the sentence they are inside is a cheaper
+    /// answer than rewinding through it. Complements rewind rather than replacing it.
+    size_t contextText(char* out, size_t cap) const;
+
     /// Redraws everything, clearing ghosting. Use after any state change the status line
     /// shows, and on the first draw.
     void renderFull();
@@ -105,8 +120,10 @@ private:
     int16_t prefixWidth(const char* text, uint8_t chars) const;
     bool sentenceEndsAt(uint32_t index) const;
     uint32_t sentenceStart(uint32_t from) const;
+    uint32_t sentenceEndAfter(uint32_t from) const;
     void drawStatus(Surface& s) const;
     void drawGuides(Surface& s) const;
+    void drawContext(Surface& s) const;
     void drawChunk(Surface& s, const Frame& frame) const;
 
     // Painters are nested so a frame's contents can be redrawn on demand: GxEPD2 walks
@@ -122,6 +139,7 @@ private:
     rsvp::ChunkConfig chunking_{};
 
     uint32_t index_ = 0;
+    int8_t pivotOffset_ = 0;
     bool playing_ = false;
     uint32_t partialsSinceFlush_ = 0;
     char name_[64] = "built-in";
