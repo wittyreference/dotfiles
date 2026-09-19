@@ -2,6 +2,7 @@
 // ABOUTME: point on e-paper, with pause, rewind-by-sentence, and adjustable speed.
 
 #include <Arduino.h>
+#include <esp_sleep.h>
 #include <FS.h>
 #include <Fonts/FreeMonoBold12pt7b.h>
 #include <Fonts/FreeMonoBold18pt7b.h>
@@ -196,6 +197,50 @@ static void renderTransfer() {
 
 // ---------------------------------------------------------------- lifecycle
 
+/// Saves the reading position. Called before sleeping and as playback advances.
+///
+/// Sleeping without this would cost the reader their page, which is exactly the thing the
+/// resume machinery exists to protect.
+static void savePosition() {
+    g_prefs.putString("doc", g_docName);
+    g_prefs.putUInt("pos", g_reader.index());
+}
+
+/// Switches the device off. E-paper holds its image with no power, so the last thing drawn
+/// is what the reader sees while it is off -- a full refresh first means that retained
+/// image is clean rather than however much ghosting had accumulated.
+static void enterDeepSleep() {
+    Serial.println("inkflow: sleeping");
+    savePosition();
+    g_reader.setPlaying(false);
+    g_reader.renderFull();
+
+    // Arm the wake source before sleeping. Forgetting this is how a device fails to come
+    // back on and looks bricked.
+    esp_deep_sleep_enable_gpio_wakeup(1ULL << InputManager::POWER_BUTTON_PIN, ESP_GPIO_WAKEUP_GPIO_LOW);
+    Serial.flush();
+    esp_deep_sleep_start();
+}
+
+/// Rejects a wake that was not deliberate.
+///
+/// The wake source is a level on the power pin, so anything that holds it low -- a pocket,
+/// a bag -- wakes the device. Requiring the press to persist means an accidental nudge
+/// costs a moment of deep-sleep current rather than an evening of battery.
+static void requireDeliberateWake() {
+    if (esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_GPIO) {
+        return;
+    }
+    const uint32_t started = millis();
+    while (millis() - started < kPowerHoldMs) {
+        if (digitalRead(InputManager::POWER_BUTTON_PIN) != LOW) {
+            esp_deep_sleep_enable_gpio_wakeup(1ULL << InputManager::POWER_BUTTON_PIN, ESP_GPIO_WAKEUP_GPIO_LOW);
+            esp_deep_sleep_start();
+        }
+        delay(10);
+    }
+}
+
 void setup() {
     Serial.begin(115200);
     // Long enough for the host to reopen the port after USB re-enumerates, otherwise
@@ -205,6 +250,12 @@ void setup() {
 
     g_input.begin();
     Serial.println("inkflow: input ok");
+
+    // Before anything expensive -- the display costs two seconds to bring up -- reject a
+    // wake that was not deliberate. This runs after begin() because it reads the power pin
+    // directly and begin() is what configures its pull-up; reading it first would sample a
+    // floating input.
+    requireDeliberateWake();
     SPI.begin(EPD_SCLK, SD_SPI_MISO, EPD_MOSI, EPD_CS);
     SPISettings spi(kSpiHz, MSBFIRST, SPI_MODE0);
     display.init(115200, true, 2, false, SPI, spi);
@@ -239,12 +290,28 @@ void setup() {
                   g_doc.streaming() ? "streamed" : "in RAM",
                   static_cast<unsigned>(g_reader.index()));
 
+    // The press that woke the device is still down. Letting the main loop see its release
+    // would read the wake as a request to sleep again.
+    while (digitalRead(InputManager::POWER_BUTTON_PIN) == LOW) {
+        delay(10);
+    }
+
     g_reader.renderFull();
 }
 
 void loop() {
     static uint32_t lastSaved = 0;
     g_input.update();
+
+    // Power is handled ahead of the mode branch so it works while reading and while in
+    // transfer mode alike. A reader holding the power button means it, wherever they are.
+    if (g_input.wasReleased(kBtnPower) && g_input.getHeldTime() > kPowerHoldMs) {
+        if (g_transferMode) {
+            g_transfer.end();
+            g_transferMode = false;
+        }
+        enterDeepSleep();
+    }
 
     if (g_transferMode) {
         g_transfer.poll();
@@ -317,8 +384,7 @@ void loop() {
     const uint32_t index = g_reader.index();
     if ((index / 16u) != (lastSaved / 16u)) {
         lastSaved = index;
-        g_prefs.putString("doc", g_docName);
-        g_prefs.putUInt("pos", index);
+        savePosition();
     }
 
     // Refresh time counts against the hold: the panel already spent it showing the word.

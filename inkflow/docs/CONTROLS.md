@@ -14,7 +14,7 @@ it.
 | **Down** | Slow down, −30 WPM | *ignored* |
 | **Right** | Enter WiFi transfer mode | *ignored* |
 | **Back** | Redraw the screen, which also clears ghosting | **Leave transfer mode** |
-| **Power** | *nothing — not handled by this firmware* | *nothing* |
+| **Power** | **Hold ~1s to switch off.** Hold ~1s again to switch back on | **Hold ~1s to switch off** |
 
 Speed is clamped to **60–900 WPM**. The panel cannot present faster than about 330 WPM in
 three-word chunks, so numbers above that change the display without changing the pace.
@@ -42,6 +42,11 @@ stateDiagram-v2
 
     Transfer --> Paused: Back<br/>reloads the card
 
+    Playing --> Off: Power, held ~1s
+    Paused --> Off: Power, held ~1s
+    Transfer --> Off: Power, held ~1s
+    Off --> Paused: Power, held ~1s
+
     note right of Paused
         Paused also shows the
         sentence you are inside
@@ -49,7 +54,14 @@ stateDiagram-v2
 
     note right of Transfer
         WiFi radio is on.
-        Only Back responds.
+        Only Back and Power respond.
+    end note
+
+    note left of Off
+        Deep sleep. The panel keeps
+        showing the last page drawn,
+        because e-paper needs no power
+        to hold an image.
     end note
 ```
 
@@ -73,19 +85,26 @@ for more will not go faster, but asking for less genuinely does slow down.
 with the network name, password and address. The radio is the largest single power draw on
 a 650 mAh cell, so it only runs while this screen is up.
 
+**Power — off and on.** Hold for about a second and release. The reading position is saved
+first, and the panel is given a clean full refresh before sleeping: e-paper holds its image
+with no power, so whatever was drawn last is what you see while the device is off. Hold it
+again for about a second to wake. A brief press while asleep is ignored on purpose -- the
+wake source is a level on a pin, so a pocket would otherwise switch the device on.
+
 **Back — redraw.** Forces a full refresh. Useful when ghosting has built up and you do not
-want to wait for the automatic flush. In transfer mode this is the only button that
-responds, and it drops the radio and reloads the card.
+want to wait for the automatic flush. In transfer mode it is one of only two buttons that
+respond -- the other being Power -- and it drops the radio and reloads the card.
 
 ## What is not implemented
 
 Worth stating plainly, because these are the things people reasonably expect:
 
-- **No long press, and no press-and-hold, anywhere.** Every handler in the firmware reads a
-  rising edge — the instant a button goes down. Holding a button does nothing that tapping
-  it does not. The input library does expose a held-time, and nothing uses it.
-- **The Power button does nothing.** The firmware never reads it. Whatever it does is
-  between the hardware and the bootloader, not this firmware.
+- **Power is the only button with a hold gesture.** Every other handler reads a rising
+  edge — the instant the button goes down — so holding them does nothing that tapping does
+  not.
+- **A tap during a refresh is dropped.** Button edges are only sampled once per loop, and a
+  refresh blocks for 542ms or 1958ms. A press that begins and ends inside that window is
+  never seen. Press deliberately, or hold until the screen responds.
 - **No bookmark, no table of contents, no chapter jump.** Position is saved automatically,
   but there is no way to move by more than a sentence.
 - **No way to pick a book on the device.** It opens the first `.rsvp` it finds at the root
