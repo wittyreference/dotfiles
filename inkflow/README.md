@@ -4,7 +4,7 @@ An RSVP reader for e-ink devices, targeting the [Xteink X4](docs/PLATFORM-MATRIX
 
 RSVP — rapid serial visual presentation — displays text one word or short chunk at a time at a fixed screen position. Your eye stops moving: no line tracking, no saccades, no losing your place. For some readers, and specifically for readers with ADHD, removing the eye-movement and place-keeping overhead is the difference between reading and re-reading the same paragraph six times.
 
-**Status: the engine and the reader are built and tested; the reader has never displayed a book.** See [Honest status](#honest-status) — that section is the contract, and it will not overstate what exists.
+**Status: the reader runs on the device and has played a passage end to end; it has not yet read a book.** See [Honest status](#honest-status) — that section is the contract, and it will not overstate what exists.
 
 ## What's here
 
@@ -12,7 +12,7 @@ RSVP — rapid serial visual presentation — displays text one word or short ch
 |---|---|---|
 | `core/` | **`rsvp-core`** — the portable engine: tokenizer, pivot calculation, timing model, chunker, playback state machine, `.rsvp` container. C++17, no dependencies, no dynamic allocation, no I/O | Done and tested |
 | `reader/` | **`rsvp-reader`** — the reading loop: chunk assembly, pacing, refresh policy, rewind. Draws through an injected surface and reads through an injected byte source, so the device and the simulator run one copy | Done and tested |
-| `firmware/reader/` | The reader for the Xteink X4. Streams a sidecar from SD, WiFi transfer, resume | Compiles and links. **Never flashed** |
+| `firmware/reader/` | The reader for the Xteink X4. Streams a sidecar from SD, WiFi transfer, resume | Flashed and run. Played a built-in passage; **the WiFi transfer has never completed** |
 | `tools/rsvp-mk/` | Host-side converter: text / markdown → a compact `.rsvp` sidecar | Working for TXT and Markdown. HTML and PDF not started |
 | `tools/epub-to-text/` | EPUB → text, spine order preserved | Working, as a separate step before `rsvp-mk` |
 | `bench/eink-bench/` | On-device harness measuring real SSD1677 refresh latency | Run on hardware. Results in `docs/REFRESH-MEASUREMENTS.md` |
@@ -103,13 +103,18 @@ What is true today:
 - The simulator runs that loop against a panel model calibrated to the measured refresh numbers, streams a real 1.4 MB sidecar through the same code path the device uses, and **fails the build** on a layout fault. It can write a session as an animated GIF at the true reading pace.
 - `rsvp-mk` converts text and Markdown to a `.rsvp` sidecar, and a test asserts the round trip plays back the original words in order through the real file format.
 - The engine compiles clean under `-Wall -Wextra -Wpedantic -Werror -Wconversion -Wsign-conversion -Wshadow -Wold-style-cast`, and separately with exceptions and RTTI disabled.
-- The firmware compiles and links for the ESP32-C3, with the shared module in the image.
+- The firmware compiles and links for the ESP32-C3, with the shared module in the image. CI builds it on every push, so the claim is a job rather than a memory.
+- **The reader runs on the device.** It played the 66-token built-in passage end to end through 24 partial and 4 full refreshes and stopped cleanly — no crash, no panic, no watchdog reset, no brownout. The panel drew, the card read, and the buttons answered. Recorded in [`hardware-notes/first-reading-20260918.md`](hardware-notes/first-reading-20260918.md).
+- **The panel measurement predicted itself.** GxEPD2 logs `_Update_Part : 501000` on every frame of a real reading session. `docs/REFRESH-MEASUREMENTS.md` had concluded from six band heights that the partial waveform is a fixed ~501 ms and only SPI transfer scales with area — which is the finding that killed windowed partial updates and made chunking mandatory. The driver states the number unchanged, on hardware, on every refresh.
 
 What is **not** true yet, and will not be claimed until it is:
 
-- **No reader has ever displayed a book.** The firmware builds and its reading loop is tested on a host, but nothing has been flashed since it was written — no panel, no card, no button press has been observed. Everything is verified except the thing itself.
+- **No reader has ever read a book.** Sixty-six tokens of built-in passage is not a book. Nothing has yet streamed a real sidecar off a card on the device, and the thing the whole project is for remains the thing least evidenced.
+- **The WiFi transfer has never completed.** The access point comes up and the web server answers — a joining phone's captive-portal probes produce `request handler not found`, which is the server working, not failing. But no file has ever moved. The streaming upload handler, the AP holding up under a 1.4 MB transfer, and the post-upload document reload are verified by a compiler and nothing else.
+- **The pacing has never been judged.** The reader now delivers the speed it is asked for, which it did not before. Whether 330 WPM in three-word chunks is comfortable to read is the one question no measurement answers.
 - **Power draw is still unmeasured.** The bench ran on USB power, so the battery numbers in its output mean nothing. Sustained-refresh cost on a 650 mAh cell is the last open risk.
 - **Ghosting is unquantified.** The simulator counts partial updates between full refreshes and the reader now bounds that number, but "how ghosted is too ghosted" has been assessed by eye, on one panel, once.
+- **The two full-refresh figures disagree, and this is recorded rather than resolved.** GxEPD2 reports `_Update_Full : 1689 ms`; `eink-bench` measured a 1958 ms median. They are not contradictory — the bench timed the whole operation wall-clock including power-on, SPI transfer and power-off, while `_Update_Full` is the waveform phase alone, and the 269 ms gap is the right order for the panel's quoted 100 ms power-on and 200 ms power-off. Nothing has yet measured the two independently on the same run. The timing model is calibrated against 1958 ms, because that is the one a reader actually waits.
 - The panel model is a fit to six measured band heights, not a simulation of the controller. It reproduces timing, not waveforms, and it does not model ghosting as anything but a count.
 - HTML and PDF ingest are not implemented. EPUB is a separate host-side step rather than something `rsvp-mk` accepts directly.
 - Markdown handling is a deliberately minimal line-oriented stripper, not a real parser. It handles headings, lists, blockquotes, emphasis, inline code, links, images, fenced code, rules, and table delimiter rows; anything more exotic passes through as text.
