@@ -364,6 +364,7 @@ void Reader::drawChunk(Surface& s, const Frame& frame) const {
 }
 
 void Reader::drawSleep(Surface& s) const {
+    drawControls(s);
     // The guide ticks and the focal column, same as the reading screen, so the device
     // still looks like itself rather than like a crash.
     const int16_t mid = static_cast<int16_t>(layout_.bandY + kChunkBaseline);
@@ -377,10 +378,14 @@ void Reader::drawSleep(Surface& s) const {
     const int16_t markWidth = s.textWidth(Font::kChunk, mark);
     s.text(Font::kChunk, static_cast<int16_t>(layout_.focalX - markWidth / 2), mid, mark);
 
-    // A rule the full width of the panel: unmistakably deliberate, and nothing a
-    // half-finished refresh would ever leave behind.
+    // A long rule: unmistakably deliberate, and nothing a half-finished refresh would
+    // ever leave behind. Stops short of the right-hand column, which belongs to the thumb
+    // rockers' labels -- a rule running under them would read as an underline on whichever
+    // word it met.
     const int16_t ruleY = static_cast<int16_t>(mid + 72);
-    s.rect(60, ruleY, static_cast<int16_t>(layout_.width - 120), 2, Ink::kBlack);
+    const int16_t ruleRight = hasControls_ ? static_cast<int16_t>(layout_.width - 200)
+                                           : static_cast<int16_t>(layout_.width - 60);
+    s.rect(60, ruleY, static_cast<int16_t>(ruleRight - 60), 2, Ink::kBlack);
 
     char line[96];
     const uint32_t total = doc_.count();
@@ -394,6 +399,88 @@ void Reader::drawSleep(Surface& s) const {
     w = s.textWidth(Font::kStatus, wake);
     s.text(Font::kStatus, static_cast<int16_t>((layout_.width - w) / 2),
            static_cast<int16_t>(ruleY + 88), wake);
+}
+
+void Reader::setControls(const ControlMap& controls) {
+    controls_ = controls;
+    hasControls_ = true;
+}
+
+/// Draws each button's label against the edge that button is on.
+///
+/// The point is adjacency, not the text. A list of controls is something a reader has to
+/// map onto the device themselves; a label at the offset the button actually sits at is
+/// read next to the thing it names, and needs no mapping at all.
+///
+/// A short bar marks the button's own footprint at the very edge, so the label is tied to
+/// a position rather than floating near one.
+void Reader::drawControls(Surface& s) const {
+    if (!hasControls_) {
+        return;
+    }
+
+    constexpr int16_t kBarThickness = 6;
+    constexpr int16_t kTopBaseline = 42;
+    constexpr int16_t kRightMargin = 16;
+
+    // Top edge: the bar runs along the very top, the label sits under it. A rocker's two
+    // functions are placed at its two ends, in edge order, so "which end" is answered by
+    // where the word is rather than by remembering.
+    auto top = [&s](const ControlLabel& c) {
+        if (c.first == nullptr) {
+            return;
+        }
+        s.rect(c.at, 0, c.span, kBarThickness, Ink::kBlack);
+        if (c.second == nullptr) {
+            const int16_t w = s.textWidth(Font::kStatus, c.first);
+            s.text(Font::kStatus, static_cast<int16_t>(c.at + (c.span - w) / 2), kTopBaseline,
+                   c.first);
+            return;
+        }
+        // Each function pushed past its own end of the rocker rather than tucked inside
+        // it. A rocker is narrower than two words, so placing them within its span puts
+        // them shoulder to shoulder and they read as one phrase instead of as a choice.
+        // Outside, with the bar between them, the gap itself says "these are two ends".
+        constexpr int16_t kSplay = 12;
+        const int16_t w1 = s.textWidth(Font::kStatus, c.first);
+        s.text(Font::kStatus, static_cast<int16_t>(c.at - kSplay - w1), kTopBaseline, c.first);
+        s.text(Font::kStatus, static_cast<int16_t>(c.at + c.span + kSplay), kTopBaseline,
+               c.second);
+    };
+
+    top(controls_.power);
+    top(controls_.volume);
+
+    // Right edge: the bar runs down the far right, labels right-aligned beside it. The
+    // upper function sits near the top of the rocker's span and the lower near the bottom,
+    // which is the same "where the word is, is which end" rule turned ninety degrees.
+    auto right = [&s, this](const ControlLabel& c) {
+        if (c.first == nullptr) {
+            return;
+        }
+        const int16_t barX = static_cast<int16_t>(layout_.width - kBarThickness);
+        s.rect(barX, c.at, kBarThickness, c.span, Ink::kBlack);
+
+        const int16_t textRight = static_cast<int16_t>(barX - kRightMargin);
+        // Kept close to the rocker's centre rather than pinned to its ends. A 200px rocker
+        // is taller than two lines of text need, and labels pushed to its extremes stop
+        // reading as a pair -- the lower one drifts so far it looks like it belongs to
+        // whatever is nearest instead. One line either side of centre, splayed just enough
+        // that "upper" and "lower" are unmistakable.
+        constexpr int16_t kSplay = 26;
+        const int16_t centre = static_cast<int16_t>(c.at + c.span / 2);
+        const int16_t w1 = s.textWidth(Font::kStatus, c.first);
+        s.text(Font::kStatus, static_cast<int16_t>(textRight - w1),
+               static_cast<int16_t>(centre - kSplay), c.first);
+        if (c.second != nullptr) {
+            const int16_t w2 = s.textWidth(Font::kStatus, c.second);
+            s.text(Font::kStatus, static_cast<int16_t>(textRight - w2),
+                   static_cast<int16_t>(centre + kSplay + 18), c.second);
+        }
+    };
+
+    right(controls_.upperThumb);
+    right(controls_.lowerThumb);
 }
 
 void Reader::renderSleep() {

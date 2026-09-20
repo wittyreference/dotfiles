@@ -58,6 +58,43 @@ static constexpr uint8_t kRotation = 0;  // 800x480 landscape
 // device behaves the way an X4 owner already expects. A deliberate hold rather than a tap
 // because this button is the one thing that cannot be undone by pressing it again, and a
 // reader should not lose their page to a brush against a pocket.
+// Which logical button carries which function.
+//
+// The firmware sees a resistor ladder, not geometry: it cannot tell which end of a rocker
+// is the upper one, and the device labels nothing. This mapping was established by
+// pressing each button and reading the serial log -- see docs/CONTROLS.md, which records
+// both the physical arrangement and how it was measured.
+//
+// Named rather than used inline so that the reading loop reads as what it does, and so
+// that re-seating a function is one line here instead of a hunt through the loop. The
+// sleep screen's labels are generated from the same constants, so a change cannot leave
+// the screen claiming one thing while the device does another.
+//
+//   upper right rocker -- Right / Left    -- speed
+//   lower right rocker -- Confirm / Back  -- play/pause, rewind
+//   volume rocker      -- Up / Down       -- book picker, wifi transfer
+//   power              -- Power           -- hold to sleep
+static constexpr uint8_t kBtnSpeedUp = kBtnRight;
+static constexpr uint8_t kBtnSpeedDown = kBtnLeft;
+static constexpr uint8_t kBtnPlayPause = kBtnConfirm;
+static constexpr uint8_t kBtnRewind = kBtnBack;
+static constexpr uint8_t kBtnPicker = kBtnUp;
+static constexpr uint8_t kBtnWifi = kBtnDown;
+
+// Where those buttons physically sit against the panel, so the sleep screen can label them
+// in place rather than list them. Offsets are along the edge, in panel pixels, and describe
+// the button's footprint -- estimated from a photograph of the device with the panel lit,
+// so they are close rather than exact. Tune against the real thing if a label looks off.
+//
+// The words are the functions assigned above. Both come from this file, so the screen
+// cannot end up claiming one thing while the loop does another.
+static constexpr reader::ControlMap kX4Controls{
+    {118, 78, "power", nullptr},
+    {337, 170, "books", "wifi"},
+    {37, 193, "faster", "slower"},
+    {249, 193, "play", "rewind"},
+};
+
 static constexpr uint32_t kPowerHoldMs = 1000u;
 
 // Battery sense. The bench measured through this pin with a 16-sample average; the reader

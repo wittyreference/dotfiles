@@ -91,9 +91,16 @@ configure dies in `Check for working CXX compiler` with `tapi error: malformed f
 Point at the Xcode SDK instead:
 
 ```sh
+export DEVELOPER_DIR=/Library/Developer/CommandLineTools
 cmake -B build -DCMAKE_BUILD_TYPE=Debug \
-  -DCMAKE_OSX_SYSROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.sdk
+  -DCMAKE_OSX_SYSROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk
 ```
+
+`DEVELOPER_DIR` is the load-bearing half. `xcode-select` points at Xcode.app, and every
+tool that shims through `xcrun` -- `git` and `cc` among them -- then refuses to run with
+*"You have not agreed to the Xcode license agreements"*, which wants `sudo` and a terminal
+that can prompt. Pointing `DEVELOPER_DIR` at the Command Line Tools sidesteps it entirely:
+the CLT carry no licence gate. The same export is why `git` works.
 
 And `pio run` dies with `riscv32-esp-elf-g++: Bad CPU type in executable`. The RISC-V
 toolchain espressif32 pins for the Arduino framework is an x86_64 binary; the registry

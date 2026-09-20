@@ -66,7 +66,13 @@ private:
         display_.firstPage();
         do {
             painter.paint(*this);
+            // GxEPD2 hands control back once per page, and nextPage() is where the panel
+            // actually spends its half second. Servicing here is the only chance the
+            // device has to notice a button while the display is working -- without it
+            // the reader is deaf for three quarters of every reading cycle.
+            serviceWhileBusy();
         } while (display_.nextPage());
+        serviceWhileBusy();
     }
 
     /// GxEPD2 describes a partial window with unsigned bounds where the surface contract

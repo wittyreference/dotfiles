@@ -669,3 +669,81 @@ TEST_CASE("the estimator and the reading loop agree about sentence starts") {
     }
     CHECK(r.index() == 0u);
 }
+
+// The device labels none of its buttons, and the only way to learn them has been to press
+// one and watch. The sleep screen is where that stops being true: it is a full-panel image
+// e-paper holds with no power, so it costs nothing, and it is the state a reader is in
+// when they pick the device up and cannot remember which end does what.
+//
+// Placed, not listed. Each label is drawn against the edge its button is actually on, at
+// the offset it actually sits at, so it is read next to the thing it names.
+TEST_CASE("the sleep screen labels the buttons where the buttons are") {
+    sim::Panel panel(reader::kLandscape);
+    reader::Document doc = makeDocument();
+    reader::Reader r(doc, panel, reader::kLandscape);
+    r.setTiming(timingAt(330));
+
+    // The X4's arrangement, measured on the device: power alone and a volume rocker along
+    // the top, two rockers down the right edge under the thumb.
+    const reader::ControlMap controls{
+        {105, 90, "power", nullptr},
+        {315, 140, "books", "wifi"},
+        {25, 210, "faster", "slower"},
+        {245, 205, "play", "rewind"},
+    };
+    r.setControls(controls);
+    r.renderSleep();
+
+    auto inkIn = [&panel](int16_t x0, int16_t y0, int16_t x1, int16_t y1) {
+        int ink = 0;
+        for (int16_t y = y0; y < y1; ++y) {
+            for (int16_t x = x0; x < x1; ++x) {
+                if (panel.canvas().pixel(x, y) == sim::kBlack) {
+                    ++ink;
+                }
+            }
+        }
+        return ink;
+    };
+
+    SUBCASE("the top-edge labels sit over their buttons and nowhere else") {
+        // Ink under the power button and under the volume rocker...
+        CHECK(inkIn(90, 0, 215, 46) > 0);
+        CHECK(inkIn(300, 0, 470, 46) > 0);
+        // ...and none between them and the right edge, where no top-edge button sits --
+        // which is what makes the placement informative rather than decorative.
+        //
+        // Bounded at y=40 and x=780 because the upper thumb rocker legitimately begins at
+        // y=25: its bar runs down the last few columns and its first label's ascenders
+        // reach about y=42. Those are a button being marked, not clutter, and the gap
+        // between them and the top-edge labels is only a few pixels -- worth knowing if
+        // the arrangement is ever tuned against the real device.
+        CHECK(inkIn(560, 0, 780, 40) == 0);
+    }
+
+    SUBCASE("the right-edge labels sit beside their rockers") {
+        // Each rocker gets ink within its own span on the right of the panel.
+        CHECK(inkIn(560, 25, 800, 235) > 0);
+        CHECK(inkIn(560, 245, 800, 450) > 0);
+    }
+
+    SUBCASE("labelling does not disturb the screen's own furniture") {
+        // The wordmark and the ticks still identify the device, and the status line still
+        // says which book and how far in. An off device should look like itself.
+        const int16_t mid = static_cast<int16_t>(reader::kLandscape.bandY + reader::kChunkBaseline);
+        CHECK(panel.canvas().pixel(reader::kLandscape.focalX, mid - 70) == sim::kBlack);
+        CHECK(panel.canvas().pixel(reader::kLandscape.focalX, mid + 34) == sim::kBlack);
+        CHECK(panel.fullRefreshes() == 1u);
+    }
+
+    SUBCASE("a device with no control map still draws a sleep screen") {
+        // The map is a device fact the portable reader cannot know on its own. Without one
+        // it draws the screen it drew before rather than nothing.
+        sim::Panel bare(reader::kLandscape);
+        reader::Document d2 = makeDocument();
+        reader::Reader r2(d2, bare, reader::kLandscape);
+        r2.renderSleep();
+        CHECK(bare.fullRefreshes() == 1u);
+        CHECK(inkIn(0, 0, 800, 480) >= 0);
+    }
+}

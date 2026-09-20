@@ -138,9 +138,65 @@ above.
 The whole round trip is proven: read, hold power, position saved, sleep screen drawn, deep
 sleep, hold power, wake, resume.
 
+## The transfer still has not completed, and now we know why not
+
+Attempted twice from a phone and once from a laptop. All three failed with
+`ERR_ADDRESS_UNREACHABLE` or a connection timeout, and none of them reached the device.
+
+The firmware is not at fault, which took adding nine lines of serial logging to establish.
+Before those lines the transfer path was the least observable thing this firmware does: it
+runs while the reader looks at a screen that is drawn once, and a failed upload left no
+record anywhere. `04-read-session.sh` told the operator to keep the capture running
+"because the serial log is the evidence", and for this leg there was none.
+
+With the logging, the device's own account:
+
+```
+17:35:39 inkflow: ap inkflow up at 192.168.4.1
+17:35:49 inkflow: ap clients 0 -> 1
+17:44:37 inkflow: ap clients 1 -> 0
+17:44:39 inkflow: ap clients 0 -> 1
+17:45:48 inkflow: ap clients 1 -> 0
+17:46:31 inkflow: ap clients 0 -> 1
+17:48:05 inkflow: ap clients 1 -> 0
+```
+
+The access point came up on the address it claims. A laptop associated with it and was
+issued `192.168.4.2` by the device's DHCP server — confirmed on the host with
+`ipconfig getifaddr en0`. **The link layer works in both directions.**
+
+What does not happen is the client *staying*. Seconds after associating, macOS had returned
+the interface to the house network; by the time `curl` ran, `en0` was back on
+`192.168.86.26` and every request was being routed to the home gateway. The reader went on
+counting the station for nine minutes because the client left without deauthenticating —
+an AP cannot tell "gone" from "quiet" until an inactivity timeout, which is what the
+`1 -> 0` at 17:44:37 is.
+
+The cause is client-side network preference. Both macOS and iOS prefer a remembered network
+that has internet over one that does not, and the house SSID outranks `inkflow` in the
+preferred list. A phone does the same thing more aggressively, and silently, which is why
+two phone attempts produced an unreachable address rather than a timeout: the request went
+out over cellular.
+
+**What to do on the next attempt**, in order of how little it disturbs:
+
+1. Raise `inkflow` above the house network in the preferred list —
+   `networksetup -addpreferredwirelessnetworkatindex en0 inkflow 0 WPA2 inkflow-reader` —
+   and lower it again afterwards.
+2. On a phone, turn cellular data off before joining, so there is no route for the request
+   to escape down.
+3. Watch `ap clients` on the serial log rather than the panel or the phone's settings
+   screen. It is the only account of the association that comes from the device.
+
+Nothing here needs a firmware change. It needed the firmware to be able to say what was
+happening, which it now can.
+
 ## What is still unproven
 
-- **The WiFi transfer still has not completed.** It was not attempted in this leg.
+- **The WiFi transfer still has not completed.** Attempted three times this session. The
+  access point, the DHCP server and the association all work; no HTTP request has ever
+  reached the device, because no client has stayed on the network long enough to make one.
+  The streaming upload handler remains verified by a compiler and nothing else.
 - **Power draw on battery is still unmeasured.** The instrumentation to measure it exists
   now; the run has not been made.
 - **The pacing has not been judged.** 234 WPM delivered in three-word chunks is what the

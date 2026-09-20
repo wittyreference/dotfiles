@@ -1,0 +1,18 @@
+17:33:41 _Update_Full : 1689001
+17:33:43 _Update_Full : 1689000
+17:35:39 inkflow: ap inkflow up at 192.168.4.1
+17:35:41 _Update_Full : 1689001
+17:35:49 inkflow: ap clients 0 -> 1
+17:35:51 _Update_Full : 1689001
+17:44:37 inkflow: ap clients 1 -> 0
+17:44:38 _Update_Full : 1689001
+17:44:39 inkflow: ap clients 0 -> 1
+17:44:40 _Update_Full : 1689002
+17:45:48 inkflow: ap clients 1 -> 0
+17:45:50 _Update_Full : 1689001
+17:46:31 inkflow: ap clients 0 -> 1
+17:46:33 _Update_Full : 1689001
+17:48:05 inkflow: ap clients 1 -> 0
+17:48:07 _Update_Full : 1689001
+17:48:10 inkflow: ap down
+17:48:12 _Update_Full : 1689002

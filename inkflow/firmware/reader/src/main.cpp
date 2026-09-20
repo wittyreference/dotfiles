@@ -15,9 +15,12 @@
 #include "InputManager.h"
 #include "config.h"
 #include "gxepd2_surface.h"
+#include "resume_key.h"
 #include "sd_source.h"
 #include "transfer.h"
 #include "reader/document.hpp"
+#include "reader/input.hpp"
+#include "reader/picker.hpp"
 #include "reader/layout.hpp"
 #include "reader/reader.hpp"
 #include "rsvp/timing.hpp"
@@ -36,10 +39,49 @@ static GxEpd2Surface<Display> g_surface(display);
 static SdSource g_source;
 static reader::Document g_doc;
 static reader::Reader g_reader(g_doc, g_surface, reader::kLandscape);
+/// The book list. Populated only when the reader asks for it, because the walk that
+/// fills it is the one that once took 108 seconds in silence.
+static reader::Picker g_picker(g_surface, reader::kLandscape);
+
+/// Reads every button's level straight off the resistor ladders.
+///
+/// getState() rather than the InputManager's own edge tracking: this is sampled from
+/// inside a blocking panel refresh, where the once-per-loop update() has not run and
+/// cannot. Two analogReads and a digitalRead, roughly ten times per refresh -- nothing
+/// against half a second of waveform.
+class LadderButtons : public reader::ButtonSource {
+public:
+    uint16_t levels() override { return g_input.getState(); }
+};
+
+static LadderButtons g_buttons;
+
+/// millis(), which is the only clock this device has.
+class ArduinoClock : public reader::Clock {
+public:
+    uint32_t nowMs() override { return millis(); }
+};
+
+static ArduinoClock g_clock;
+/// Catches presses that land while the panel is working, which is most of them, and
+/// times holds from the same samples.
+static reader::ButtonLatch g_latch(g_buttons, g_clock);
 
 static Preferences g_prefs;
 static Transfer g_transfer;
+/// The SDK's own names, in its own index order. Copied rather than borrowed because the
+/// SDK keeps its table private, and vendored code is not ours to edit.
+static const char* const kButtonNames[] = {"Back",  "Confirm", "Left", "Right",
+                                           "Up",    "Down",    "Power"};
+
 static bool g_transferMode = false;
+/// Whether the book list is on screen instead of the reading frame.
+static bool g_pickerMode = false;
+
+/// The RAM a .txt is tokenised into. One buffer, shared by both paths that load one:
+/// 16KB is five percent of this device's SRAM, and a second copy bought nothing --
+/// only one document is ever open.
+static char g_textBuffer[reader::kMaxTextBytes];
 /// Whether the card mounted at boot. A missing card is a normal state: the reader falls
 /// back to a built-in passage, and the diagnostics simply go unwritten.
 static bool g_sdReady = false;
@@ -86,6 +128,55 @@ static constexpr uint32_t kScanMaxEntries = 4000u;
 /// .rsvp is preferred because it streams: a real book is far past what RAM holds, and
 /// the sidecar exists so the device can seek into a flat token array rather than build
 /// one. A .txt is still accepted for short pieces and is tokenised in memory.
+/// Fills the picker with everything on the card a reader could open.
+///
+/// The same walk `loadDocument` does, and bounded the same way, but keeping every match
+/// rather than stopping at the first sidecar. Separate rather than folded together
+/// because they answer different questions -- "what do I open now" wants to stop early,
+/// "what could I open" cannot -- and because the reader only pays for this walk when it
+/// asks for the list.
+static void listDocuments() {
+    g_picker.clear();
+
+    File root = SD.open("/");
+    if (!root) {
+        return;
+    }
+    uint32_t scanned = 0;
+    uint32_t reportedAt = millis();
+    for (File f = root.openNextFile(); f; f = root.openNextFile()) {
+        const char* name = f.name();
+        const size_t n = strlen(name);
+        const bool dir = f.isDirectory();
+        const bool rsvp = n > 5 && strcasecmp(name + n - 5, ".rsvp") == 0;
+        const bool txt = n > 4 && strcasecmp(name + n - 4, ".txt") == 0;
+        if (!dir && (rsvp || txt)) {
+            // Without its leading slash: the name is what the reader reads, and the
+            // picker hands it back to be opened with one put on again.
+            if (!g_picker.add(name[0] == '/' ? name + 1 : name)) {
+                Serial.println("inkflow: picker full, later books not listed");
+                f.close();
+                break;
+            }
+        }
+        f.close();
+        if (++scanned >= kScanMaxEntries) {
+            Serial.printf("inkflow: sd scan stopped at %u entries\n",
+                          static_cast<unsigned>(scanned));
+            break;
+        }
+        const uint32_t now = millis();
+        if (now - reportedAt >= kScanReportMs) {
+            reportedAt = now;
+            Serial.printf("inkflow: scanning sd, %u entries\n",
+                          static_cast<unsigned>(scanned));
+        }
+    }
+    root.close();
+    const unsigned found = static_cast<unsigned>(g_picker.count());
+    Serial.printf("inkflow: %u book%s on the card\n", found, found == 1u ? "" : "s");
+}
+
 static void loadDocument() {
     g_doc.close();
     g_source.close();
@@ -141,12 +232,11 @@ static void loadDocument() {
     if (best[0] != 0) {
         File f = SD.open(best, FILE_READ);
         if (f) {
-            static char buffer[reader::kMaxTextBytes];
             const size_t got =
-                f.read(reinterpret_cast<uint8_t*>(buffer), reader::kMaxTextBytes);
+                f.read(reinterpret_cast<uint8_t*>(g_textBuffer), reader::kMaxTextBytes);
             f.close();
             if (got > 0) {
-                g_doc.useMemory(buffer, got);
+                g_doc.useMemory(g_textBuffer, got);
                 setDocumentName(best + 1);
                 return;
             }
@@ -204,9 +294,77 @@ static void renderTransfer() {
 ///
 /// Sleeping without this would cost the reader their page, which is exactly the thing the
 /// resume machinery exists to protect.
+/// Saves where the reader is, under a key belonging to this document alone.
+///
+/// One slot per book, not one slot. Resume used to be a single "doc"/"pos" pair, which is
+/// correct for a device that can only open the first file it finds and silently loses a
+/// reader's place the moment a picker lets them open a second.
 static void savePosition() {
-    g_prefs.putString("doc", g_docName);
-    g_prefs.putUInt("pos", g_reader.index());
+    char key[16];
+    if (!resumeKey(g_docName, key, sizeof(key))) {
+        return;
+    }
+    g_prefs.putUInt(key, g_reader.index());
+}
+
+/// Restores this document's position, or starts at the beginning.
+static uint32_t savedPosition(const char* name) {
+    char key[16];
+    if (!resumeKey(name, key, sizeof(key))) {
+        return 0u;
+    }
+    // Guarded by isKey() because reading an absent key logs inside Preferences at ERROR
+    // level, and a benign first run that looks like a fault in the log is how a real
+    // fault becomes hard to spot later.
+    return g_prefs.isKey(key) ? g_prefs.getUInt(key, 0u) : 0u;
+}
+
+/// Opens a named book from the card and seeks to wherever this reader left it.
+static void openDocument(const char* name) {
+    savePosition();
+
+    char path[kMaxCardPath];
+    if (!safeCardPath(name, path, sizeof(path))) {
+        return;
+    }
+
+    g_doc.close();
+    g_source.close();
+
+    const size_t n = strlen(name);
+    const bool sidecar = n > 5 && strcasecmp(name + n - 5, ".rsvp") == 0;
+    if (sidecar && g_source.open(path) && g_doc.openSidecar(g_source)) {
+        setDocumentName(name);
+    } else {
+        g_source.close();
+        File f = SD.open(path, FILE_READ);
+        bool loaded = false;
+        if (f) {
+            const size_t got =
+                f.read(reinterpret_cast<uint8_t*>(g_textBuffer), reader::kMaxTextBytes);
+            f.close();
+            if (got > 0) {
+                g_doc.useMemory(g_textBuffer, got);
+                setDocumentName(name);
+                loaded = true;
+            }
+        }
+        if (!loaded) {
+            // The card had it a moment ago and will not open it now. Say so rather than
+            // dropping the reader into a built-in passage with no explanation.
+            Serial.printf("inkflow: could not open %s\n", name);
+            return;
+        }
+    }
+
+    uint32_t at = savedPosition(g_docName);
+    if (at >= g_doc.count()) {
+        at = 0u;
+    }
+    g_reader.seek(at);
+    g_reader.setPlaying(false);
+    Serial.printf("inkflow: opened %s, %u tokens, resume at %u\n", g_docName,
+                  static_cast<unsigned>(g_doc.count()), static_cast<unsigned>(at));
 }
 
 /// Appends one reading to `/battery.csv` on the card.
@@ -312,8 +470,12 @@ void setup() {
     // level, and a first run has no saved position -- an error line for the normal case
     // is what makes a real fault hard to spot in the log later. isKey() reaches NVS
     // directly and says nothing; the comparison below is unchanged when the key is there.
-    if (g_prefs.isKey("doc") && g_prefs.getString("doc", "") == String(g_docName)) {
-        g_reader.seek(g_prefs.getUInt("pos", 0u));
+    {
+        uint32_t at = savedPosition(g_docName);
+        if (at >= g_doc.count()) {
+            at = 0u;
+        }
+        g_reader.seek(at);
     }
 
     // Three words per update is not a preference. At the measured 542ms refresh floor
@@ -322,6 +484,9 @@ void setup() {
     timing.wpm = 330u;
     timing.minHoldMs = rsvp::kPanelPartialRefreshMs;
     g_reader.setTiming(timing);
+    g_reader.setControls(kX4Controls);
+    // Everything the panel blocks on now services the latch while it works.
+    g_surface.setServicer(&g_latch);
 
     Serial.printf("inkflow: %s, %u tokens, %s, resume at %u\n", g_docName,
                   static_cast<unsigned>(g_doc.count()),
@@ -341,9 +506,19 @@ void loop() {
     static uint32_t lastSaved = 0;
     g_input.update();
 
+    // Sample once more here. Everything the latch caught during the last refresh --
+    // where the reader spends about three quarters of every cycle -- is waiting in it.
+    g_latch.service();
+
     // Power is handled ahead of the mode branch so it works while reading and while in
     // transfer mode alike. A reader holding the power button means it, wherever they are.
-    if (g_input.wasReleased(kBtnPower) && g_input.getHeldTime() > kPowerHoldMs) {
+    //
+    // Timed by the latch rather than by InputManager's own tracking: that samples once a
+    // turn, and a turn is 650ms of which the panel is blocking for 500. A deliberate
+    // one-second hold measured between two such samples could come out as anything, which
+    // is exactly what happened the first time anyone tried to switch the device off.
+    if (g_latch.heldFor(kBtnPower) >= kPowerHoldMs) {
+        g_pickerMode = false;
         if (g_transferMode) {
             g_transfer.end();
             g_transferMode = false;
@@ -357,6 +532,51 @@ void loop() {
         enterDeepSleep();
     }
 
+    // Drained after the power check, because take() clears the hold durations along with
+    // the presses. Each press is acted on exactly once however many samples saw it.
+    const uint16_t pressed = g_latch.take();
+    auto tapped = [pressed](uint8_t button) {
+        return (pressed & static_cast<uint16_t>(1u << button)) != 0u;
+    };
+
+    // Name every press on the serial port. The device labels none of its buttons and the
+    // SDK records only names on a resistor ladder, so which physical button carries which
+    // name is knowable one way: press one and read what comes out. Cheap enough to leave
+    // in -- a line per press, and a press is a human-speed event.
+    for (uint8_t b = 0; b <= kBtnPower; ++b) {
+        if (tapped(b)) {
+            Serial.printf("inkflow: btn %s\n", kButtonNames[b]);
+        }
+    }
+
+
+    if (g_pickerMode) {
+        // The same two rockers, doing the same shape of thing: the upper one moves, the
+        // lower one chooses. A reader who has learnt "up is more" while reading does not
+        // have to learn a second vocabulary to open a book.
+        if (tapped(kBtnSpeedUp)) {
+            g_picker.moveUp();
+            g_picker.render();
+        } else if (tapped(kBtnSpeedDown)) {
+            g_picker.moveDown();
+            g_picker.render();
+        } else if (tapped(kBtnPlayPause)) {
+            const char* chosen = g_picker.name(g_picker.selected());
+            if (chosen != nullptr) {
+                openDocument(chosen);
+            }
+            g_pickerMode = false;
+            g_reader.renderFull();
+        } else if (tapped(kBtnPicker) || tapped(kBtnRewind)) {
+            // Leaving without choosing. The same button that opened the list closes it,
+            // and rewind -- "go back" -- does the obvious thing here too.
+            g_pickerMode = false;
+            g_reader.renderFull();
+        }
+        delay(5);
+        return;
+    }
+
     if (g_transferMode) {
         g_transfer.poll();
 
@@ -367,10 +587,12 @@ void loop() {
             renderTransfer();
         }
 
-        // Right both enters and leaves transfer mode, so every button on the device owns
-        // exactly one function. Back meant "redraw" while reading and "leave" here, which
-        // is two jobs for one button and one more thing for a reader to hold in their head.
-        if (g_input.wasPressed(kBtnRight)) {
+        // Any of the three "get me out of here" buttons leaves, not just the one that
+        // brought you in. Volume-up is what leaving feels like -- it is what leaves the
+        // book list -- and a reader who presses it here and gets nothing has been taught
+        // a special case rather than a rule. Rewind means "back" for the same reason.
+        if (tapped(kBtnWifi) || tapped(kBtnPicker) ||
+            tapped(kBtnRewind)) {
             g_transfer.end();
             g_transferMode = false;
 
@@ -391,19 +613,27 @@ void loop() {
         return;
     }
 
-    if (g_input.wasPressed(kBtnConfirm)) {
+    if (tapped(kBtnPlayPause)) {
         g_reader.togglePlay();
         g_reader.renderFull();
-    } else if (g_input.wasPressed(kBtnLeft)) {
+    } else if (tapped(kBtnRewind)) {
         g_reader.rewindSentence();
         g_reader.renderFull();
-    } else if (g_input.wasPressed(kBtnUp)) {
+    } else if (tapped(kBtnSpeedUp)) {
         g_reader.adjustSpeed(+30);
         g_reader.renderFull();
-    } else if (g_input.wasPressed(kBtnDown)) {
+    } else if (tapped(kBtnSpeedDown)) {
         g_reader.adjustSpeed(-30);
         g_reader.renderFull();
-    } else if (g_input.wasPressed(kBtnRight)) {
+    } else if (tapped(kBtnPicker)) {
+        // The card walk is the slow part, so it happens here rather than at boot: a
+        // reader who never opens the picker never pays for it.
+        g_reader.setPlaying(false);
+        savePosition();
+        listDocuments();
+        g_pickerMode = true;
+        g_picker.render();
+    } else if (tapped(kBtnWifi)) {
         g_transferMode = true;
         g_reader.setPlaying(false);
         // Let go of the card before the upload server touches it. SdSource holds the
@@ -416,9 +646,13 @@ void loop() {
         g_doc.close();
         g_transfer.begin();
         renderTransfer();
-    } else if (g_input.wasPressed(kBtnBack)) {
-        g_reader.renderFull();
     }
+
+    // Redraw has no button any more. It existed to clear ghosting by hand, and the
+    // three-tier flush now does that on its own: measured over a real book it fired at
+    // 68, 62, 61 and 76 partials, every one from the first tier, never reaching the
+    // sentence or deadline fallbacks. A control that solves a problem the device no
+    // longer has is a control a reader still has to learn.
 
     if (!g_reader.playing() || g_reader.atEnd()) {
         delay(20);

@@ -112,6 +112,11 @@ public:
     /// screen whose job is to be unmistakable at a glance.
     void renderSleep();
 
+    /// Tells the reader where this device's buttons are, so the sleep screen can label
+    /// them in place. A device fact: the portable reader cannot know it, and without one
+    /// the sleep screen simply carries no labels.
+    void setControls(const ControlMap& controls);
+
     /// Presents the next chunk and advances past it.
     ///
     /// Returns false at the end of the document, having drawn nothing. The caller owns
@@ -132,6 +137,7 @@ private:
     void drawGuides(Surface& s) const;
     void drawContext(Surface& s) const;
     void drawSleep(Surface& s) const;
+    void drawControls(Surface& s) const;
     void drawChunk(Surface& s, const Frame& frame) const;
 
     // Painters are nested so a frame's contents can be redrawn on demand: GxEPD2 walks
@@ -139,6 +145,9 @@ private:
     class FullPainter;
     class BandPainter;
     class SleepPainter;
+
+    ControlMap controls_{};
+    bool hasControls_ = false;
 
     Document& doc_;
     Surface& surface_;

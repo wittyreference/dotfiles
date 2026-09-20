@@ -6,62 +6,53 @@ it.
 
 ## Quick reference
 
-| Button | While reading | While in WiFi transfer |
-|---|---|---|
-| **Confirm** | Play / pause | *ignored* |
-| **Left** | Rewind to the start of the sentence. Press again to step into the previous one | *ignored* |
-| **Up** | Speed up, +30 WPM | *ignored* |
-| **Down** | Slow down, −30 WPM | *ignored* |
-| **Right** | Enter WiFi transfer mode | **Leave transfer mode** |
-| **Back** | Redraw the screen, which also clears ghosting | *ignored* |
-| **Power** | **Hold ~1s to switch off.** Hold ~1s again to switch back on | **Hold ~1s to switch off** |
+| Button | While reading | In WiFi transfer | In the book list |
+|---|---|---|---|
+| **Upper rocker, top** | Speed up, +30 wpm | *ignored* | Move the selection up |
+| **Upper rocker, bottom** | Speed down, -30 wpm | *ignored* | Move the selection down |
+| **Lower rocker, top** | Play / pause | *ignored* | Open the selected book |
+| **Lower rocker, bottom** | Rewind a sentence | **Leave transfer mode** | Leave without choosing |
+| **Volume up** | Open the book list | **Leave transfer mode** | Leave without choosing |
+| **Volume down** | Enter WiFi transfer | **Leave transfer mode** | *ignored* |
+| **Power** | **Hold ~1s to switch off.** Hold again to switch on | **Hold ~1s to switch off** | **Hold ~1s to switch off** |
+
 
 Speed is clamped to **60–900 WPM**. The panel cannot present faster than about 330 WPM in
 three-word chunks, so numbers above that change the display without changing the pace.
 
-## The two modes
+## The three modes
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Paused: boot, after the SD scan
+    [*] --> Paused: boot
 
-    Paused --> Playing: Confirm
-    Playing --> Paused: Confirm
+    Paused --> Playing: lower rocker, top
+    Playing --> Paused: lower rocker, top
 
-    Playing --> Playing: Up / Down<br/>±30 WPM
-    Paused --> Paused: Up / Down<br/>±30 WPM
+    Playing --> Playing: upper rocker<br/>±30 WPM
+    Paused --> Paused: upper rocker<br/>±30 WPM
 
-    Playing --> Playing: Left<br/>rewind a sentence
-    Paused --> Paused: Left<br/>rewind a sentence
+    Playing --> Playing: lower rocker, bottom<br/>rewind a sentence
+    Paused --> Paused: lower rocker, bottom<br/>rewind a sentence
 
-    Playing --> Playing: Back<br/>redraw, clears ghosting
-    Paused --> Paused: Back<br/>redraw, clears ghosting
+    Paused --> Books: volume up
+    Playing --> Books: volume up<br/>(pauses first)
+    Books --> Paused: lower rocker, top<br/>opens the chosen book
+    Books --> Paused: volume up<br/>or lower rocker, bottom
 
-    Paused --> Transfer: Right
-    Playing --> Transfer: Right<br/>(pauses first)
-
-    Transfer --> Paused: Right<br/>reloads the card
+    Paused --> Transfer: volume down
+    Playing --> Transfer: volume down<br/>(pauses first)
+    Transfer --> Paused: volume down<br/>reloads the card
 
     Playing --> Off: Power, held ~1s
     Paused --> Off: Power, held ~1s
+    Books --> Off: Power, held ~1s
     Transfer --> Off: Power, held ~1s
     Off --> Paused: Power, held ~1s
 
     note right of Paused
         Paused also shows the
         sentence you are inside
-    end note
-
-    note right of Transfer
-        WiFi radio is on.
-        Only Right and Power respond.
-    end note
-
-    note left of Off
-        Deep sleep. The panel keeps
-        showing the last page drawn,
-        because e-paper needs no power
-        to hold an image.
     end note
 ```
 
@@ -101,6 +92,38 @@ wake source is a level on a pin, so a pocket would otherwise switch the device o
 want to wait for the automatic flush. In transfer mode it does nothing: the only two
 buttons that respond there are Right, which leaves, and Power, which switches off.
 
+## The device labels itself when it is off
+
+Switch the reader off and the panel keeps its last image, because e-paper needs no power to
+hold one. That image is a map of the device's own controls: a bar marking each button's
+footprint against the edge it sits on, with what it does written beside it.
+
+```
+        [====] power      [========] books | wifi
+     +---------------------------------------+ [=]
+     |                                       | [=]  faster
+     |                 inkflow               | [=]  slower
+     |                                       | [=]
+     |          agents.rsvp -- 26%           | [=]  play
+     |      off -- hold power to wake        | [=]  rewind
+     +---------------------------------------+ [=]
+```
+
+Placed rather than listed, which is the whole point: a list of controls is something you
+have to map onto the device yourself, while a label at the offset its button actually sits
+at is read next to the thing it names. A rocker's two words go either side of its bar, so
+"which end" is answered by where the word is.
+
+The words come from the same constants the reading loop dispatches on, so the screen cannot
+end up claiming one thing while the device does another. The footprints are estimates taken
+from a photograph of the lit device; they are four lines in `firmware/reader/src/config.h`
+if the real thing says otherwise.
+
+This is also why the reading screen carries no labels. The thumb rockers sit level with the
+reading band, and a chunk has 500px right of the focal column and needs about 400 of it --
+anything drawn there competes with the text, which is the overflow the simulator exists to
+fail the build on.
+
 ## What is not implemented
 
 Worth stating plainly, because these are the things people reasonably expect:
@@ -118,16 +141,54 @@ Worth stating plainly, because these are the things people reasonably expect:
   also the one that clears it. To photograph ghosting at its worst, wait out the cycle
   rather than pausing: a full refresh is visibly a flash, and the panel is most ghosted
   about thirty-five seconds after one ends.
-- **No way to pick a book on the device.** It opens the first `.rsvp` it finds at the root
-  of the card, else the first `.txt`, else a built-in passage. Books inside folders are not
-  found — the scan does not descend.
+- **Books inside folders are not found.** The card scan does not descend, so the picker
+  lists the root and nothing else.
 
 ## Finding the buttons
 
 The firmware names buttons `Back, Confirm, Left, Right, Up, Down, Power`. Those names come
 from the community SDK's input library, which reads them off two resistor ladders on ADC
-pins. **Nothing in the code or the SDK documents where they physically sit on the device** —
-that mapping exists only in the plastic.
+pins, and nothing in the code or the SDK records where they physically sit. Established by
+handling the device, 2026-09-20, with the panel in its shipped landscape orientation:
+
+```
+        [P]   [ Vol +/- ]
+     +---------------------------------+
+     | agents.rsvp                     |
+     | 330 wpm  12%                    |
+     |              |                  |  [ ]  <- upper rocker
+     |       the quick brown           |  [ ]
+     |              |                  |  [ ]  <- lower rocker
+     |                                 |  [ ]
+     +---------------------------------+
+```
+
+**Three physical controls, seven logical buttons.** Power is a single button; everything
+else is a rocker, pressed at one end or the other. That is why the SDK reports seven — it
+is not a generic count across a product family, it is this device:
+
+| Physical | Where | Logical |
+|---|---|---|
+| Power | top edge, solo, leftmost | `Power` |
+| Volume rocker | top edge, right of Power | `Up` / `Down` |
+| Upper rocker | right edge, under the thumb | two of `Back`/`Confirm`/`Left`/`Right` |
+| Lower rocker | right edge, below it | the other two |
+
+- **Top edge: Power, then the volume rocker**, above the corner where the document name is
+  drawn. The rocker is what the firmware calls `Up` and `Down` — so the speed control is
+  the volume rocker, which is exactly the right place for it on a device held in one hand,
+  and is worth treating as a design fact rather than an accident of the SDK's naming.
+- **Right edge: two rockers**, clustered around the middle under the thumb, carrying
+  `Back`, `Confirm`, `Left` and `Right` between them. **Which end is which is not yet
+  recorded** — establish it by pressing and watching the screen rather than by guessing:
+  Confirm starts the text advancing, Right switches the whole screen to the transfer page,
+  Left jumps the text backwards, and Back redraws without changing anything.
+
+That cluster sits level with the reading band, which is why the reading screen carries no
+button labels: anything drawn there would compete with chunk text for the 500px budget a
+chunk has right of the focal column, and chunks need about 400 of it. The labels live on
+the sleep screen instead, where there is a whole free panel and the image persists with no
+power — see below.
 
 If you need to identify one, the fastest way is by behaviour:
 

@@ -66,4 +66,35 @@ inline constexpr uint32_t kPartialsBeforeSentenceFlush = 90u;
 /// a screen this ghosted; the difference is that this one recovers.
 inline constexpr uint32_t kPartialsFlushDeadline = 120u;
 
+/// Where a physical button sits against the edge of the panel, and what it does.
+///
+/// The device labels none of its buttons, and the SDK that reads them records only names
+/// on a resistor ladder -- so the only way to learn them has been to press one and watch.
+/// This is that knowledge, placed rather than listed: the sleep screen draws each label
+/// against the edge the button is actually on, at the offset it actually sits at, so the
+/// label is read next to the thing it names.
+///
+/// `at` and `span` are along the edge -- x for the top edge, y for the right edge -- in
+/// panel pixels. They describe the button's footprint, not the label's.
+struct ControlLabel {
+    int16_t at;
+    int16_t span;
+    /// What the button does. Two entries for a rocker, in edge order; the second is null
+    /// for a single button.
+    const char* first;
+    const char* second;
+};
+
+/// The Xteink X4's controls, measured against the panel in its shipped orientation.
+///
+/// Three physical controls carrying seven logical buttons: Power alone, and three rockers.
+/// See docs/CONTROLS.md for how this was established, and for the fact that it could not
+/// be read out of any code.
+struct ControlMap {
+    ControlLabel power;
+    ControlLabel volume;
+    ControlLabel upperThumb;
+    ControlLabel lowerThumb;
+};
+
 }  // namespace reader
