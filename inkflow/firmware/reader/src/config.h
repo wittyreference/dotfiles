@@ -89,10 +89,10 @@ static constexpr uint8_t kBtnWifi = kBtnDown;
 // The words are the functions assigned above. Both come from this file, so the screen
 // cannot end up claiming one thing while the loop does another.
 static constexpr reader::ControlMap kX4Controls{
-    {105, 90, "power", nullptr},
-    {315, 140, "books", "wifi"},
-    {25, 210, "faster", "slower"},
-    {245, 205, "play", "rewind"},
+    {118, 78, "power", nullptr},
+    {337, 170, "books", "wifi"},
+    {37, 193, "faster", "slower"},
+    {249, 193, "play", "rewind"},
 };
 
 static constexpr uint32_t kPowerHoldMs = 1000u;
