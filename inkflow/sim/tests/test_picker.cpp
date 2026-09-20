@@ -5,6 +5,7 @@
 
 #include "../src/panel.hpp"
 #include "reader/layout.hpp"
+#include "../../firmware/reader/src/resume_key.h"
 #include "reader/picker.hpp"
 
 #include <string>
@@ -131,4 +132,57 @@ TEST_CASE("the picker draws the selection so it can be told from the rest") {
     p.moveDown();
     p.render();
     CHECK(rowInk(p.rowY(1)) > rowInk(p.rowY(0)));
+}
+
+// Resume position used to live in one NVS slot: a single "doc" name and a single "pos".
+// With a picker that is a bug waiting to happen -- open a second book and the first one
+// silently loses the reader's place. Each document needs its own slot, and NVS keys are
+// capped at 15 characters, so the name cannot be the key.
+TEST_CASE("every document gets its own resume key") {
+    char a[16];
+    char b[16];
+
+    SUBCASE("the same name always gives the same key") {
+        REQUIRE(resumeKey("agents.rsvp", a, sizeof(a)));
+        REQUIRE(resumeKey("agents.rsvp", b, sizeof(b)));
+        CHECK(std::string(a) == std::string(b));
+    }
+
+    SUBCASE("different names give different keys") {
+        REQUIRE(resumeKey("agents.rsvp", a, sizeof(a)));
+        REQUIRE(resumeKey("moby-dick.rsvp", b, sizeof(b)));
+        CHECK(std::string(a) != std::string(b));
+
+        // Names differing in one character must not collide either -- books on one card
+        // are often a series with a number on the end.
+        REQUIRE(resumeKey("vol-1.rsvp", a, sizeof(a)));
+        REQUIRE(resumeKey("vol-2.rsvp", b, sizeof(b)));
+        CHECK(std::string(a) != std::string(b));
+    }
+
+    SUBCASE("the key fits what NVS will accept") {
+        // NVS refuses a key longer than 15 characters, and refuses it at runtime on a
+        // device with nobody watching, so this is checked here instead.
+        const char* names[] = {"a", "agents.rsvp", "a-really-quite-long-book-name-indeed.rsvp", ""};
+        for (const char* n : names) {
+            REQUIRE(resumeKey(n, a, sizeof(a)));
+            const std::string key(a);
+            CHECK(key.size() <= 15u);
+            CHECK(key.size() > 0u);
+            // Printable ASCII, so a key is greppable in a dump rather than mojibake.
+            for (char c : key) {
+                CHECK(c > 0x20);
+                CHECK(c < 0x7f);
+            }
+        }
+    }
+
+    SUBCASE("a buffer too small is refused rather than truncated") {
+        // A truncated key would collide with other truncated keys, which is worse than
+        // not saving: the reader would be dropped into someone else's page.
+        char tiny[4];
+        CHECK_FALSE(resumeKey("agents.rsvp", tiny, sizeof(tiny)));
+        CHECK_FALSE(resumeKey("agents.rsvp", a, 0u));
+        CHECK_FALSE(resumeKey(nullptr, a, sizeof(a)));
+    }
 }
