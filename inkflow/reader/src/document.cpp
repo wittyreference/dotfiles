@@ -88,10 +88,23 @@ size_t Document::text(uint32_t offset, uint16_t length, char* out, size_t cap) {
         }
         memcpy(out, ramText_ + offset, want);
     } else {
-        if (!source_->seek(header_.textOffset + offset)) {
+        // Bounded by what the header says the text blob is, exactly as the RAM branch is
+        // bounded by ramLen_. Relying on the file running out instead works only while
+        // the blob is the last thing in the file, which is a property of the writer
+        // rather than of the format -- and the reader is about to start accepting files
+        // from anything that can reach its access point.
+        if (offset >= header_.textLength) {
             want = 0;
         } else {
-            want = source_->read(reinterpret_cast<uint8_t*>(out), want);
+            const uint32_t available = header_.textLength - offset;
+            if (want > available) {
+                want = available;
+            }
+            if (!source_->seek(header_.textOffset + offset)) {
+                want = 0;
+            } else {
+                want = source_->read(reinterpret_cast<uint8_t*>(out), want);
+            }
         }
     }
     out[want] = '\0';

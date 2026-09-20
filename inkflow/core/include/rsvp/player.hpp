@@ -29,6 +29,17 @@ struct ResumePoint {
 /// larger than available RAM. The player only ever touches the token at the
 /// current index and scans backwards for sentence starts, so it needs no
 /// lookahead buffer.
+///
+/// **This is not what runs on the device.** `reader::Reader` is, and it implements the
+/// same navigation over a streaming `Document` rather than an array. Player is the
+/// host-side estimator: it is what `rsvp-mk`'s reading-time figure runs through.
+///
+/// Two implementations of one idea is how this project's worst bug happened -- the
+/// firmware reimplemented the chunk hold, took a max where the engine takes a sum, and
+/// the simulator stayed green throughout because it was running the other copy. So the
+/// duplication is guarded rather than tolerated: `sim/tests/test_reader.cpp` walks both
+/// back from every position in a document and requires them to land in the same place.
+/// If you change sentence navigation here, change it there too, or that test will say so.
 class Player {
 public:
     /// Constructs a player over `[tokens, tokens + count)`, paused at index 0.

@@ -60,6 +60,11 @@ static constexpr uint8_t kRotation = 0;  // 800x480 landscape
 // reader should not lose their page to a brush against a pocket.
 static constexpr uint32_t kPowerHoldMs = 1000u;
 
+// Battery sense. The bench measured through this pin with a 16-sample average; the reader
+// only ever prints what it reads, so a single sample is enough. Sustained-refresh cost on
+// a 650 mAh cell is the last open hardware risk and nothing on a host can measure it.
+static constexpr uint8_t kBatteryAdcPin = 0;
+
 static constexpr char kApSsid[] = "inkflow";
 static constexpr char kApPassword[] = "inkflow-reader";  // WPA2 needs 8+ characters
 static constexpr uint16_t kHttpPort = 80;

@@ -3,14 +3,20 @@
 
 #include "vendor/doctest.h"
 
+#include "../../firmware/reader/src/card_path.h"
 #include "../src/panel.hpp"
+#include "../src/file_source.hpp"
 #include "reader/document.hpp"
 #include "reader/reader.hpp"
+#include "rsvp/format.hpp"
+#include "rsvp/player.hpp"
 #include "rsvp/timing.hpp"
 
+#include <cstdio>
 #include <cstring>
 #include <initializer_list>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -520,4 +526,146 @@ TEST_CASE("the sleep screen survives a document name longer than its buffer") {
     r.renderSleep();
 
     CHECK(panel.fullRefreshes() == 1u);
+}
+
+// The upload and delete handlers build a card path out of a name that arrived over HTTP.
+// Nothing on the far side of that is trusted, and the card is the only writable storage
+// the device has. The policy lives in a header with no Arduino types precisely so it can
+// be tested here rather than only on a device nobody is watching.
+TEST_CASE("a card path is built only from a plain filename") {
+    char out[64];
+
+    SUBCASE("an ordinary book is accepted, with its leading slash") {
+        REQUIRE(safeCardPath("agents.rsvp", out, sizeof(out)));
+        CHECK(std::string(out) == "/agents.rsvp");
+    }
+
+    SUBCASE("separators are refused rather than stripped") {
+        CHECK_FALSE(safeCardPath("../secret", out, sizeof(out)));
+        CHECK_FALSE(safeCardPath("sub/book.rsvp", out, sizeof(out)));
+        CHECK_FALSE(safeCardPath("/absolute.rsvp", out, sizeof(out)));
+        CHECK_FALSE(safeCardPath("back\\slash.rsvp", out, sizeof(out)));
+    }
+
+    SUBCASE("directory references are refused, but a dotted name is not") {
+        CHECK_FALSE(safeCardPath(".", out, sizeof(out)));
+        CHECK_FALSE(safeCardPath("..", out, sizeof(out)));
+        REQUIRE(safeCardPath("Vol..2.rsvp", out, sizeof(out)));
+        CHECK(std::string(out) == "/Vol..2.rsvp");
+    }
+
+    SUBCASE("an empty name is not a filename") {
+        CHECK_FALSE(safeCardPath("", out, sizeof(out)));
+        CHECK_FALSE(safeCardPath(nullptr, out, sizeof(out)));
+    }
+
+    SUBCASE("a name that does not fit is refused, not truncated") {
+        // Truncating would silently write to a different file than the one uploaded.
+        const std::string longName(80, 'b');
+        CHECK_FALSE(safeCardPath(longName.c_str(), out, sizeof(out)));
+
+        char tight[8];
+        CHECK(safeCardPath("abcdef", tight, sizeof(tight)));
+        CHECK_FALSE(safeCardPath("abcdefg", tight, sizeof(tight)));
+    }
+
+    SUBCASE("control characters are refused") {
+        CHECK_FALSE(safeCardPath("book\nname.rsvp", out, sizeof(out)));
+    }
+}
+
+// Document has two text paths and they were not symmetric. The RAM branch clamps the
+// request against the text it holds; the streaming branch seeked and read, and relied on
+// the file simply running out to bound it. That is fine for a well-formed sidecar -- and
+// a sidecar that arrived over an upload path with no test coverage is exactly the thing
+// that stops being well-formed first.
+TEST_CASE("streamed text is bounded by the document, not by the end of the file") {
+    // A valid sidecar with extra bytes appended after it. A short read cannot bound the
+    // request here, because there are plenty more bytes in the file: only textLength can.
+    const std::string body = "one two three";
+    const std::string trailer = "SHOULD NOT BE READABLE AS DOCUMENT TEXT";
+
+    const size_t sidecarSize = rsvp::rsvpFileSize(0u, uint32_t(body.size()));
+    std::string file(sidecarSize, '\0');
+    size_t written = 0u;
+    REQUIRE(rsvp::writeRsvp(nullptr, 0u, body.data(), uint32_t(body.size()),
+                            reinterpret_cast<unsigned char*>(&file[0]), file.size(),
+                            written) == rsvp::RsvpStatus::kOk);
+    REQUIRE(written == sidecarSize);
+    file += trailer;
+
+    const std::string path = "/tmp/inkflow-bounded-text.rsvp";
+    {
+        std::FILE* f = std::fopen(path.c_str(), "wb");
+        REQUIRE(f != nullptr);
+        std::fwrite(file.data(), 1, file.size(), f);
+        std::fclose(f);
+    }
+
+    sim::FileSource source(path.c_str());
+    REQUIRE(source.valid());
+    reader::Document doc;
+    REQUIRE(doc.openSidecar(source));
+
+    char out[128];
+
+    // Asking for more than the blob holds must stop at the blob, not spill into what
+    // follows it in the file.
+    const size_t got = doc.text(0, uint16_t(body.size() + trailer.size()), out, sizeof(out));
+    CHECK(got == body.size());
+    CHECK(std::string(out) == body);
+
+    // And an offset past the end hands back nothing rather than a window into the trailer.
+    CHECK(doc.text(uint32_t(body.size() + 4u), 16u, out, sizeof(out)) == 0u);
+    CHECK(out[0] == '\0');
+
+    std::remove(path.c_str());
+}
+
+// rsvp::Player and reader::Reader both know how to walk backwards to the start of a
+// sentence, and they are separate implementations: Player is the host-side estimator that
+// rsvp-mk's reading-time figure runs through, reader::Reader is what ships on the device
+// over a streaming Document.
+//
+// Having two of anything is how this project's worst bug happened -- the firmware
+// reimplemented the chunk hold, took a max where the engine takes a sum, and the
+// simulator stayed green for weeks because it was running the other copy. Deleting one of
+// these is not the fix (Player backs a host tool; Reader has hardware evidence behind
+// it), so instead they are made to prove they agree.
+TEST_CASE("the estimator and the reading loop agree about sentence starts") {
+    reader::Document doc = makeDocument();
+    REQUIRE(doc.count() > 20u);
+
+    // Player borrows a token array; Document hands them out one at a time.
+    std::vector<rsvp::Token> tokens;
+    for (uint32_t i = 0; i < doc.count(); ++i) {
+        const rsvp::Token* t = doc.token(i);
+        REQUIRE(t != nullptr);
+        tokens.push_back(*t);
+    }
+
+    sim::Panel panel(reader::kLandscape);
+    reader::Reader r(doc, panel, reader::kLandscape);
+    r.setTiming(timingAt(330));
+
+    rsvp::Player p(tokens.data(), uint32_t(tokens.size()), timingAt(330));
+
+    // From every position in the document, one rewind must land in the same place.
+    for (uint32_t start = 0; start < doc.count(); ++start) {
+        r.seek(start);
+        p.seek(start);
+        r.rewindSentence();
+        p.rewindSentence();
+        REQUIRE(r.index() == p.position());
+    }
+
+    // And repeated presses must walk backwards together rather than one of them sticking.
+    r.seek(doc.count() - 1u);
+    p.seek(doc.count() - 1u);
+    for (int press = 0; press < 12; ++press) {
+        r.rewindSentence();
+        p.rewindSentence();
+        REQUIRE(r.index() == p.position());
+    }
+    CHECK(r.index() == 0u);
 }

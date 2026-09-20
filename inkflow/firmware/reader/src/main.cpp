@@ -259,7 +259,14 @@ void setup() {
     requireDeliberateWake();
     SPI.begin(EPD_SCLK, SD_SPI_MISO, EPD_MOSI, EPD_CS);
     SPISettings spi(kSpiHz, MSBFIRST, SPI_MODE0);
-    display.init(115200, true, 2, false, SPI, spi);
+    // The 4th argument is GxEPD2's reset_duration in milliseconds. It was 2, against the
+    // 10 ms the panel's own documentation specifies for the reset pulse -- see
+    // open-x4-sdk/libs/display/EInkDisplay/doc/SSD1677_GUIDE.md, "Reset pulse | 10ms".
+    // A short pulse is one of the two named suspects for the display that stopped updating
+    // in hardware-notes/bringup-20260918.md; the other, a flat battery, is addressed by the
+    // power button. Raised on the panel maker's authority rather than on a measurement,
+    // because there is no measurement that distinguishes them.
+    display.init(115200, true, 10, false, SPI, spi);
     display.setRotation(kRotation);
     Serial.println("inkflow: display ok");
 
@@ -389,6 +396,14 @@ void loop() {
     if ((index / 16u) != (lastSaved / 16u)) {
         lastSaved = index;
         savePosition();
+
+        // A battery column in the serial log, on the cadence that already exists. Nothing
+        // on a host defends this line -- there is no battery to read there -- so it stays
+        // a print rather than logic. On USB the reading is pinned and means nothing; on
+        // the cell it is the only measurement of the one risk still open, and it costs a
+        // printf against a 542ms refresh.
+        Serial.printf("inkflow: at %u, %u mV\n", static_cast<unsigned>(index),
+                      static_cast<unsigned>(analogReadMilliVolts(kBatteryAdcPin)));
     }
 
     // Refresh time counts against the hold: the panel already spent it showing the word.
