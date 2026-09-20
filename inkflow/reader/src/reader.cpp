@@ -437,14 +437,14 @@ void Reader::drawControls(Surface& s) const {
                    c.first);
             return;
         }
-        // Each function pushed past its own end of the rocker rather than tucked inside
-        // it. A rocker is narrower than two words, so placing them within its span puts
-        // them shoulder to shoulder and they read as one phrase instead of as a choice.
-        // Outside, with the bar between them, the gap itself says "these are two ends".
-        constexpr int16_t kSplay = 12;
+        // Each function centred on its own end of the rocker, so the word straddles the
+        // end it belongs to rather than sitting clear of the whole control. Pushed
+        // outside they read as two labels near a bar; centred on the ends they read as
+        // this end and that end, which is the thing being said.
         const int16_t w1 = s.textWidth(Font::kStatus, c.first);
-        s.text(Font::kStatus, static_cast<int16_t>(c.at - kSplay - w1), kTopBaseline, c.first);
-        s.text(Font::kStatus, static_cast<int16_t>(c.at + c.span + kSplay), kTopBaseline,
+        s.text(Font::kStatus, static_cast<int16_t>(c.at - w1 / 2), kTopBaseline, c.first);
+        const int16_t w2 = s.textWidth(Font::kStatus, c.second);
+        s.text(Font::kStatus, static_cast<int16_t>(c.at + c.span - w2 / 2), kTopBaseline,
                c.second);
     };
 
@@ -462,11 +462,16 @@ void Reader::drawControls(Surface& s) const {
         s.rect(barX, c.at, kBarThickness, c.span, Ink::kBlack);
 
         const int16_t textRight = static_cast<int16_t>(barX - kRightMargin);
-        // Kept close to the rocker's centre rather than pinned to its ends. A 200px rocker
-        // is taller than two lines of text need, and labels pushed to its extremes stop
-        // reading as a pair -- the lower one drifts so far it looks like it belongs to
-        // whatever is nearest instead. One line either side of centre, splayed just enough
-        // that "upper" and "lower" are unmistakable.
+        // Near the rocker's centre rather than centred on its ends -- deliberately unlike
+        // the top edge, which does the opposite. The difference is the aspect ratio: the
+        // top rocker is about as wide as its two words, so centring them on its ends puts
+        // each word over the end it names. These are 193px tall and the words are one
+        // line each, so the same rule would fling them to the extremes of the control
+        // where they stop reading as a pair and the lower one starts looking like it
+        // belongs to whatever is nearest below.
+        //
+        // Not an inconsistency to be tidied away: both placements say "this end", and
+        // which one does that depends on how much taller the button is than the label.
         constexpr int16_t kSplay = 26;
         const int16_t centre = static_cast<int16_t>(c.at + c.span / 2);
         const int16_t w1 = s.textWidth(Font::kStatus, c.first);
