@@ -95,21 +95,14 @@ MSG
 
     cat <<MSG
 
-Booting the application.
-
-02-flash.sh finishes with --after no-reset, which leaves the chip in the ROM bootloader.
-That rule exists for STOCK firmware, which drops USB-Serial/JTAG the moment it boots. Ours
-does not: it builds with ARDUINO_USB_CDC_ON_BOOT=1 and holds USB up across a hard reset,
-so this needs no hands on the device.
-MSG
-    "$ESPTOOL" --port "$port" --after hard-reset chip-id >/dev/null 2>&1
-
-    cat <<MSG
-
 --------- PASTE THIS ---------
-flash: ok, booted
+flash: ok, written
 port:  $port
 ------------------------------
+
+Left in the bootloader deliberately. "watch" resets it, because the six bring-up lines
+come out 2.5 seconds after boot and a capture started afterwards misses all of them --
+which is the whole reason to watch.
 
 Now:  ./scripts/04-read-session.sh watch
 MSG
@@ -178,6 +171,21 @@ do_watch() {
     local stamp log
     stamp="$(date -u +%Y%m%dT%H%M%SZ)"
     log="hardware-notes/session-$stamp.log"
+
+    # Reset into the freshly written application, then attach before it has finished
+    # booting. The firmware waits 2.5s for USB to re-enumerate before printing, which is
+    # the window this has to land in -- start the capture afterwards and the bring-up
+    # lines are already gone.
+    #
+    # --after hard-reset is right for OUR builds: ARDUINO_USB_CDC_ON_BOOT holds USB up
+    # across the reset. The --after no-reset rule in scripts/README.md is about stock.
+    if [ -n "$ESPTOOL" ]; then
+        "$ESPTOOL" --port "$port" --after hard-reset chip-id >/dev/null 2>&1
+        for _ in $(seq 1 40); do
+            [ -e "$port" ] && break
+            sleep 0.25
+        done
+    fi
 
     cat <<MSG
 Capturing $port at 115200 to:

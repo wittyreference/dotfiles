@@ -148,8 +148,8 @@ static void listDocuments() {
         }
     }
     root.close();
-    Serial.printf("inkflow: %u books on the card\n",
-                  static_cast<unsigned>(g_picker.count()));
+    const unsigned found = static_cast<unsigned>(g_picker.count());
+    Serial.printf("inkflow: %u book%s on the card\n", found, found == 1u ? "" : "s");
 }
 
 static void loadDocument() {
@@ -542,10 +542,12 @@ void loop() {
             renderTransfer();
         }
 
-        // The same button both enters and leaves transfer mode, so every control on the
-        // device owns exactly one idea. A button that means one thing while reading and
-        // another here is one more thing for a reader to hold in their head.
-        if (g_input.wasPressed(kBtnWifi)) {
+        // Any of the three "get me out of here" buttons leaves, not just the one that
+        // brought you in. Volume-up is what leaving feels like -- it is what leaves the
+        // book list -- and a reader who presses it here and gets nothing has been taught
+        // a special case rather than a rule. Rewind means "back" for the same reason.
+        if (g_input.wasPressed(kBtnWifi) || g_input.wasPressed(kBtnPicker) ||
+            g_input.wasPressed(kBtnRewind)) {
             g_transfer.end();
             g_transferMode = false;
 

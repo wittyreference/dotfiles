@@ -11,8 +11,8 @@ it.
 | **Upper rocker, top** | Speed up, +30 wpm | *ignored* | Move the selection up |
 | **Upper rocker, bottom** | Speed down, -30 wpm | *ignored* | Move the selection down |
 | **Lower rocker, top** | Play / pause | *ignored* | Open the selected book |
-| **Lower rocker, bottom** | Rewind a sentence | *ignored* | Leave without choosing |
-| **Volume up** | Open the book list | *ignored* | Leave without choosing |
+| **Lower rocker, bottom** | Rewind a sentence | **Leave transfer mode** | Leave without choosing |
+| **Volume up** | Open the book list | **Leave transfer mode** | Leave without choosing |
 | **Volume down** | Enter WiFi transfer | **Leave transfer mode** | *ignored* |
 | **Power** | **Hold ~1s to switch off.** Hold again to switch on | **Hold ~1s to switch off** | **Hold ~1s to switch off** |
 
