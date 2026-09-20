@@ -81,6 +81,20 @@ static constexpr uint8_t kBtnRewind = kBtnBack;
 static constexpr uint8_t kBtnPicker = kBtnUp;
 static constexpr uint8_t kBtnWifi = kBtnDown;
 
+// Where those buttons physically sit against the panel, so the sleep screen can label them
+// in place rather than list them. Offsets are along the edge, in panel pixels, and describe
+// the button's footprint -- estimated from a photograph of the device with the panel lit,
+// so they are close rather than exact. Tune against the real thing if a label looks off.
+//
+// The words are the functions assigned above. Both come from this file, so the screen
+// cannot end up claiming one thing while the loop does another.
+static constexpr reader::ControlMap kX4Controls{
+    {105, 90, "power", nullptr},
+    {315, 140, "books", "wifi"},
+    {25, 210, "faster", "slower"},
+    {245, 205, "play", "rewind"},
+};
+
 static constexpr uint32_t kPowerHoldMs = 1000u;
 
 // Battery sense. The bench measured through this pin with a 16-sample average; the reader

@@ -459,6 +459,7 @@ void setup() {
     timing.wpm = 330u;
     timing.minHoldMs = rsvp::kPanelPartialRefreshMs;
     g_reader.setTiming(timing);
+    g_reader.setControls(kX4Controls);
 
     Serial.printf("inkflow: %s, %u tokens, %s, resume at %u\n", g_docName,
                   static_cast<unsigned>(g_doc.count()),
