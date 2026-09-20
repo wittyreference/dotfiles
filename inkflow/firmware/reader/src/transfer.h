@@ -62,6 +62,21 @@ public:
     void poll() {
         if (running_) {
             server_->handleClient();
+
+            // A client joining or leaving redraws the screen. Without this the connected
+            // count is drawn once, when transfer mode is entered, and stays at zero for
+            // as long as the reader looks at it -- which makes the one number that could
+            // tell you whether your phone actually joined the access point useless for
+            // exactly that. Phones are quietly reluctant to stay on a network with no
+            // internet, so "did it join" is the first question a failed transfer raises.
+            //
+            // Cheap because it is edge-triggered: a full refresh costs 1958ms, but the
+            // station count changes when someone walks up to the device, not per loop.
+            const uint8_t now = WiFi.softAPgetStationNum();
+            if (now != stations_) {
+                stations_ = now;
+                dirty_ = true;
+            }
         }
     }
 
@@ -235,6 +250,8 @@ private:
     IPAddress ip_;
     bool running_ = false;
     bool dirty_ = false;
+    /// Last observed station count, so a change can be detected rather than polled for.
+    uint8_t stations_ = 0;
     char lastName_[64] = {0};
     size_t lastBytes_ = 0;
     /// Null when the last upload succeeded; otherwise what to tell the reader.

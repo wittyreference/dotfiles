@@ -347,6 +347,12 @@ void loop() {
         if (g_transferMode) {
             g_transfer.end();
             g_transferMode = false;
+            // Transfer mode closed the document so the upload server could have the card
+            // to itself. Reopen before sleeping: the sleep screen states how far through
+            // the book the reader got, and a closed document makes that 0% regardless of
+            // where they actually are. Same call the Right-to-exit path makes, for the
+            // same reason.
+            loadDocument();
         }
         enterDeepSleep();
     }
@@ -400,6 +406,14 @@ void loop() {
     } else if (g_input.wasPressed(kBtnRight)) {
         g_transferMode = true;
         g_reader.setPlaying(false);
+        // Let go of the card before the upload server touches it. SdSource holds the
+        // document's file open for the document's life -- deliberately, because an
+        // open-seek-close around every 256-token block would cost more than it saves --
+        // and streamUpload removes the target before writing it. Re-uploading the book
+        // you are currently reading would therefore unlink a file with a live read handle
+        // on it and hand its clusters to the new write. The position is already in NVS,
+        // and leaving transfer mode calls loadDocument, which reopens.
+        g_doc.close();
         g_transfer.begin();
         renderTransfer();
     } else if (g_input.wasPressed(kBtnBack)) {
