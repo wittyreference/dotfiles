@@ -1,0 +1,146 @@
+19:30:02 inkflow: boot
+19:30:02 inkflow: input ok
+19:30:02 inkflow: display ok
+19:30:02 inkflow: sd ok
+19:30:02 inkflow: document loaded
+19:30:02 inkflow: agents.rsvp, 98633 tokens, streamed, resume at 0
+19:30:04 _Update_Full : 1689000
+19:30:06 _Update_Full : 1689001
+19:30:10 inkflow: btn Up
+19:30:11 inkflow: 1 book on the card
+19:30:12 _Update_Full : 1689001
+19:30:23 inkflow: btn Up
+19:30:25 _Update_Full : 1689000
+19:30:26 inkflow: btn Right
+19:30:28 _Update_Full : 1689000
+19:30:29 inkflow: btn Right
+19:30:30 _Update_Full : 1689000
+19:30:32 inkflow: btn Confirm
+19:30:34 _Update_Full : 1689000
+19:30:34 _Update_Part : 501001
+19:30:35 _Update_Part : 501001
+19:30:35 _Update_Part : 501001
+19:30:36 _Update_Part : 501001
+19:30:36 _Update_Part : 501000
+19:30:37 _Update_Part : 501001
+19:30:38 _Update_Part : 501001
+19:30:38 inkflow: at 18, 2026 mV
+19:30:40 _Update_Part : 501000
+19:30:40 _Update_Part : 501001
+19:30:41 _Update_Part : 501001
+19:30:41 _Update_Part : 501000
+19:30:42 _Update_Part : 501001
+19:30:42 _Update_Part : 501001
+19:30:43 _Update_Part : 501001
+19:30:43 inkflow: at 34, 2026 mV
+19:30:43 _Update_Part : 501001
+19:30:44 _Update_Part : 501001
+19:30:45 _Update_Part : 501001
+19:30:45 _Update_Part : 501001
+19:30:46 _Update_Part : 501001
+19:30:46 _Update_Part : 501001
+19:30:47 _Update_Part : 501001
+19:30:47 inkflow: at 49, 2027 mV
+19:30:47 _Update_Part : 501001
+19:30:48 _Update_Part : 501001
+19:30:49 _Update_Part : 501001
+19:30:49 _Update_Part : 501001
+19:30:50 _Update_Part : 501001
+19:30:50 _Update_Part : 501001
+19:30:50 inkflow: at 64, 2026 mV
+19:30:51 _Update_Part : 501001
+19:30:51 _Update_Part : 501000
+19:30:52 _Update_Part : 501001
+19:30:53 _Update_Part : 501001
+19:30:53 _Update_Part : 501001
+19:30:54 _Update_Part : 501001
+19:30:54 inkflow: at 82, 2027 mV
+19:30:54 _Update_Part : 501001
+19:30:55 _Update_Part : 501001
+19:30:55 _Update_Part : 501001
+19:30:56 _Update_Part : 501001
+19:30:56 _Update_Part : 501001
+19:30:57 _Update_Part : 501001
+19:30:57 inkflow: at 96, 2026 mV
+19:30:58 _Update_Part : 501001
+19:30:58 _Update_Part : 501001
+19:30:59 _Update_Part : 501001
+19:30:59 _Update_Part : 501000
+19:31:00 _Update_Part : 501001
+19:31:00 _Update_Part : 501001
+19:31:00 inkflow: at 113, 2027 mV
+19:31:01 _Update_Part : 501001
+19:31:02 _Update_Part : 501001
+19:31:02 _Update_Part : 501001
+19:31:03 _Update_Part : 501001
+19:31:03 _Update_Part : 501001
+19:31:03 inkflow: at 128, 2026 mV
+19:31:04 _Update_Part : 501001
+19:31:05 _Update_Part : 501000
+19:31:05 _Update_Part : 501001
+19:31:05 inkflow: btn Confirm
+19:31:07 _Update_Full : 1689000
+19:31:10 inkflow: btn Back
+19:31:12 _Update_Full : 1689000
+19:31:12 inkflow: btn Confirm
+19:31:14 _Update_Full : 1688000
+19:31:14 _Update_Part : 501001
+19:31:15 _Update_Part : 501000
+19:31:15 _Update_Part : 501001
+19:31:16 _Update_Part : 501001
+19:31:17 _Update_Part : 501000
+19:31:17 _Update_Part : 501001
+19:31:18 _Update_Part : 501001
+19:31:18 inkflow: at 144, 2026 mV
+19:31:18 _Update_Part : 501001
+19:31:19 _Update_Part : 501001
+19:31:19 _Update_Part : 501001
+19:31:20 _Update_Part : 501001
+19:31:21 _Update_Part : 501001
+19:31:21 _Update_Part : 501001
+19:31:22 _Update_Part : 501001
+19:31:22 inkflow: at 162, 2026 mV
+19:31:22 _Update_Part : 501001
+19:31:23 _Update_Part : 501001
+19:31:23 _Update_Part : 501001
+19:31:24 _Update_Part : 501001
+19:31:25 _Update_Part : 501001
+19:31:25 _Update_Part : 501001
+19:31:25 inkflow: at 178, 2026 mV
+19:31:26 _Update_Part : 501001
+19:31:26 _Update_Part : 501001
+19:31:27 _Update_Part : 501001
+19:31:27 _Update_Part : 501001
+19:31:28 _Update_Part : 501001
+19:31:28 _Update_Part : 501001
+19:31:29 inkflow: at 193, 2026 mV
+19:31:29 _Update_Part : 501001
+19:31:30 _Update_Part : 501001
+19:31:30 _Update_Part : 501001
+19:31:31 _Update_Part : 501001
+19:31:31 _Update_Part : 501001
+19:31:32 _Update_Part : 501001
+19:31:32 inkflow: at 210, 2026 mV
+19:31:33 _Update_Part : 501001
+19:31:33 _Update_Part : 501001
+19:31:34 _Update_Part : 501001
+19:31:34 _Update_Part : 501001
+19:31:35 _Update_Part : 501001
+19:31:35 inkflow: at 225, 2027 mV
+19:31:35 _Update_Part : 501000
+19:31:36 _Update_Part : 501001
+19:31:37 _Update_Part : 501001
+19:31:37 _Update_Part : 501001
+19:31:38 _Update_Part : 501001
+19:31:38 _Update_Part : 501001
+19:31:38 inkflow: at 242, 2026 mV
+19:31:39 _Update_Part : 501001
+19:31:39 _Update_Part : 501001
+19:31:40 _Update_Part : 501001
+19:31:41 _Update_Part : 501001
+19:31:41 _Update_Part : 501001
+19:31:42 _Update_Part : 501001
+19:31:42 _Update_Part : 501000
+19:31:42 inkflow: at 257, 2027 mV
+19:31:43 _Update_Part : 501000
+19:31:43 _Update_Part : 501001

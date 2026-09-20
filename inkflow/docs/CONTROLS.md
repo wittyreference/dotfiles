@@ -92,6 +92,38 @@ wake source is a level on a pin, so a pocket would otherwise switch the device o
 want to wait for the automatic flush. In transfer mode it does nothing: the only two
 buttons that respond there are Right, which leaves, and Power, which switches off.
 
+## The device labels itself when it is off
+
+Switch the reader off and the panel keeps its last image, because e-paper needs no power to
+hold one. That image is a map of the device's own controls: a bar marking each button's
+footprint against the edge it sits on, with what it does written beside it.
+
+```
+        [====] power      [========] books | wifi
+     +---------------------------------------+ [=]
+     |                                       | [=]  faster
+     |                 inkflow               | [=]  slower
+     |                                       | [=]
+     |          agents.rsvp -- 26%           | [=]  play
+     |      off -- hold power to wake        | [=]  rewind
+     +---------------------------------------+ [=]
+```
+
+Placed rather than listed, which is the whole point: a list of controls is something you
+have to map onto the device yourself, while a label at the offset its button actually sits
+at is read next to the thing it names. A rocker's two words go either side of its bar, so
+"which end" is answered by where the word is.
+
+The words come from the same constants the reading loop dispatches on, so the screen cannot
+end up claiming one thing while the device does another. The footprints are estimates taken
+from a photograph of the lit device; they are four lines in `firmware/reader/src/config.h`
+if the real thing says otherwise.
+
+This is also why the reading screen carries no labels. The thumb rockers sit level with the
+reading band, and a chunk has 500px right of the focal column and needs about 400 of it --
+anything drawn there competes with the text, which is the overflow the simulator exists to
+fail the build on.
+
 ## What is not implemented
 
 Worth stating plainly, because these are the things people reasonably expect:
@@ -109,9 +141,8 @@ Worth stating plainly, because these are the things people reasonably expect:
   also the one that clears it. To photograph ghosting at its worst, wait out the cycle
   rather than pausing: a full refresh is visibly a flash, and the panel is most ghosted
   about thirty-five seconds after one ends.
-- **No way to pick a book on the device.** It opens the first `.rsvp` it finds at the root
-  of the card, else the first `.txt`, else a built-in passage. Books inside folders are not
-  found — the scan does not descend.
+- **Books inside folders are not found.** The card scan does not descend, so the picker
+  lists the root and nothing else.
 
 ## Finding the buttons
 

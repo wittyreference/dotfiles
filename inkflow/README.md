@@ -11,8 +11,8 @@ RSVP — rapid serial visual presentation — displays text one word or short ch
 | Component | What it is | State |
 |---|---|---|
 | `core/` | **`rsvp-core`** — the portable engine: tokenizer, pivot calculation, timing model, chunker, playback state machine, `.rsvp` container. C++17, no dependencies, no dynamic allocation, no I/O | Done and tested |
-| `reader/` | **`rsvp-reader`** — the reading loop: chunk assembly, pacing, refresh policy, rewind. Draws through an injected surface and reads through an injected byte source, so the device and the simulator run one copy | Done and tested |
-| `firmware/reader/` | The reader for the Xteink X4. Streams a sidecar from SD, WiFi transfer, resume | Reads a 98,633-token book off the card. **The WiFi transfer has never completed** |
+| `reader/` | **`rsvp-reader`** — the reading loop and the book picker: chunk assembly, pacing, refresh policy, rewind, document selection. Draws through an injected surface and reads through an injected byte source, so the device and the simulator run one copy | Done and tested |
+| `firmware/reader/` | The reader for the Xteink X4. Streams a sidecar from SD, picks between books, sleeps and wakes, WiFi transfer | Reads a 98,633-token book off the card. **The WiFi transfer has never completed** |
 | `tools/rsvp-mk/` | Host-side converter: text / markdown → a compact `.rsvp` sidecar | Working for TXT and Markdown. HTML and PDF not started |
 | `tools/epub-to-text/` | EPUB → text, spine order preserved | Working, as a separate step before `rsvp-mk` |
 | `bench/eink-bench/` | On-device harness measuring real SSD1677 refresh latency | Run on hardware. Results in `docs/REFRESH-MEASUREMENTS.md` |
@@ -108,6 +108,8 @@ What is true today:
 - **The simulator predicted what the hardware did.** Same book, same opening, 330 WPM requested: the simulator said 245 WPM delivered, 4 full refreshes and a worst ghost depth of 68 partials; the device delivered 234 WPM, 4 full refreshes, and a worst ghost depth of 68 partials. Within 5% on pace, exact on both refresh figures. That is the claim `sim/` has been making since it was rebuilt, and it had never been tested against a book.
 - **The panel is deterministic to three microseconds.** Across 303 partial refreshes in one reading session GxEPD2 reported between `500999` and `501002` µs — a spread of 3 µs. `docs/REFRESH-MEASUREMENTS.md` had concluded from six band heights that the partial waveform is a fixed ~501 ms and only SPI transfer scales with area, which is the finding that killed windowed partial updates and made chunking mandatory. The driver states that number, unchanged, on every frame of a real book.
 - **The ghost flush behaves as designed.** Partials between full refreshes over one session: 68, 62, 61, 76. Every one came from the first tier — 60 partials, then wait for a paragraph. The 90-at-a-sentence and 120-unconditional fallbacks never fired.
+- **The device can be used without documentation.** Controls sit where the hands are — speed and play/pause on the two rockers under the right thumb, book list and WiFi on the volume rocker — and the screen the panel holds while switched off is a map of them, each label drawn against the edge its button is on. The button positions were established by pressing each one and reading the serial log, because the firmware sees a resistor ladder and cannot tell geometry.
+- **Books are chosen on the device**, from a list of what is on the card, and each one resumes where it was left under its own key.
 
 What is **not** true yet, and will not be claimed until it is:
 
