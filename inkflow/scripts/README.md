@@ -167,10 +167,13 @@ Run `watch` in its own window and leave it there for the whole read: it timestam
 line, so pacing, refresh counts and the battery reading land in one timeline. Stop it
 before flashing again.
 
-`transfer` prints instructions rather than uploading anything, deliberately. This Mac's
-VPN pins `192.168.4.1` into a tunnel, so it cannot reach the device's access point at all.
-A phone sidesteps that entirely and needs no privileges, which beats editing a VPN's
-routing table for a file copy.
+`transfer` prints instructions rather than uploading anything, because the hard part is
+not the HTTP request. It is keeping a client on a network with no internet for long enough
+to make one: both macOS and iOS silently leave such a network for a remembered one that
+has internet, and every failed transfer attempt so far has been exactly that. Watch
+`inkflow: ap clients` in the serial log — it is the only account of the association that
+comes from the device, and the panel and the phone's settings screen will both claim
+success regardless.
 
 ## What comes back
 

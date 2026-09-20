@@ -121,28 +121,47 @@ do_transfer() {
     local size="unknown size"
     [ ! -f "$book" ] || size="$(( $(wc -c < "$book") / 1024 )) KB"
 
-    # Deliberately instructions rather than an upload. This host's VPN pins 192.168.4.1
-    # into a tunnel, so the Mac cannot reach the device's access point at all. A phone
-    # sidesteps it entirely and needs no privileges, which beats editing a VPN's routing
-    # table for a file copy.
+    # Instructions rather than an upload, because the hard part is not the HTTP request --
+    # it is keeping a client on a network with no internet for long enough to make one.
+    # Both macOS and iOS leave such a network for a remembered one that has internet, and
+    # they do it without saying so. Every failed attempt so far has been that, and the
+    # device logged the association each time.
     cat <<MSG
-Transfer a book -- from your PHONE, not from this Mac.
+Transfer a book.
 
-This machine's VPN pins 192.168.4.1 into a tunnel, so packets to the reader go down the
-tunnel and never reach it. Do not try to fix that; just use the phone.
+Either a phone or this Mac will do. An earlier note said the Mac could not work because
+its VPN pinned 192.168.4.1 into a tunnel; that was a one-off state and is not true in
+general. On 2026-09-20 this Mac associated with the reader and was issued 192.168.4.2 by
+the device's own DHCP server. What defeats BOTH is the same thing, below.
 
-  1. On the reader, press RIGHT.
-  2. On the phone, join wifi network   inkflow   password   inkflow-reader
-  3. Open                              http://192.168.4.1
-  4. Upload                            $(basename "$book")   ($size)
-  5. On the reader, press RIGHT again.
+  1. On the reader, press RIGHT. Serial will say: inkflow: ap inkflow up at 192.168.4.1
+  2. TURN CELLULAR DATA OFF on the phone. This is not optional and it is the thing that
+     has failed every previous attempt: a phone that can still reach the internet will
+     leave a network that cannot, silently, and the upload goes out over cellular to an
+     address that does not exist there.
+  3. On the phone, join wifi network   inkflow   password   inkflow-reader
+  4. CHECK THE SERIAL LOG for:          inkflow: ap clients 0 -> 1
+     That line is the only trustworthy account of whether the phone is on the network.
+     The panel and the phone's own settings screen will both claim success either way.
+  5. Open                              http://192.168.4.1
+  6. Upload                            $(basename "$book")   ($size)
+  7. On the reader, press RIGHT again.
 
 The page will say either "Uploaded" with a size, or "Upload failed" with a reason. It
 used to say "Uploaded" no matter what happened, so if you see a failure that is the page
 working. Paste whichever it says.
 
-This has never completed on hardware. If it goes wrong, the serial log from "watch" is
-the evidence -- keep it running throughout.
+This has never completed on hardware. Three attempts on 2026-09-20 all failed the same
+way and none of them was the device's fault: the access point, its DHCP server and the
+association all work, but no client stayed on the network long enough to make a single
+HTTP request. Both macOS and iOS prefer a remembered network that has internet.
+
+From a Mac, put the reader's network at the top of the list first, and put it back after:
+
+    networksetup -addpreferredwirelessnetworkatindex en0 inkflow 0 WPA2 inkflow-reader
+
+The serial log from "watch" is the evidence -- keep it running throughout. inkflow: ap
+clients is the line that matters.
 
 Book on this machine:
   $book
