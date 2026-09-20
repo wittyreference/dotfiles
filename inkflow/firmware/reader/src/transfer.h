@@ -39,6 +39,7 @@ public:
         server_->on("/", HTTP_GET, [this]() { serveIndex(); });
         server_->on("/list", HTTP_GET, [this]() { serveList(); });
         server_->on("/delete", HTTP_GET, [this]() { handleDelete(); });
+        server_->on("/get", HTTP_GET, [this]() { serveFile(); });
         // Two handlers: the second fires repeatedly as the body streams in, the first
         // once at the end. A 1.4 MB book cannot be buffered whole, so it is written to
         // the card as it arrives.
@@ -100,9 +101,13 @@ private:
         if (root) {
             for (File f = root.openNextFile(); f; f = root.openNextFile()) {
                 if (!f.isDirectory()) {
-                    out += "<li>";
+                    // Linked, so a phone can read a log off the card without anyone
+                    // opening the device to find the card.
+                    out += "<li><a href='/get?f=";
                     out += f.name();
-                    out += " &mdash; ";
+                    out += "'>";
+                    out += f.name();
+                    out += "</a> &mdash; ";
                     out += String(f.size() / 1024);
                     out += " KB</li>";
                 }
@@ -112,6 +117,38 @@ private:
         }
         out += "</ul>";
         server_->send(200, "text/html", out);
+    }
+
+    /// Hands a file back off the card.
+    ///
+    /// The upload path exists so books can reach the device without removing the card.
+    /// This is the same argument in the other direction: the reader writes diagnostics
+    /// there -- `/battery.csv` above all, which is the only record of a run made with the
+    /// cable out -- and without this the only way to read them is to open the device and
+    /// find a card reader.
+    void serveFile() {
+        if (!server_->hasArg("f")) {
+            server_->send(400, "text/plain", "missing f");
+            return;
+        }
+        char path[kMaxCardPath];
+        if (!safeCardPath(server_->arg("f").c_str(), path, sizeof(path))) {
+            server_->send(400, "text/plain", "not a filename");
+            return;
+        }
+        File f = SD.open(path, FILE_READ);
+        if (!f || f.isDirectory()) {
+            if (f) {
+                f.close();
+            }
+            server_->send(404, "text/plain", "no such file");
+            return;
+        }
+        // text/plain rather than a guess at the type: everything worth pulling off this
+        // device by hand is a log or a sidecar, and a browser that renders it beats one
+        // that downloads it to somewhere a phone will not show you.
+        server_->streamFile(f, "text/plain");
+        f.close();
     }
 
     void handleDelete() {

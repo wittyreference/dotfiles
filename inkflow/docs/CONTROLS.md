@@ -87,6 +87,10 @@ power draw on a 650 mAh cell, so it only runs while this screen is up. Pressing 
 drops the radio, reloads the card, and returns to reading — one button, one job, and the
 same button both ways so there is nothing to remember.
 
+The page lists what is on the card, and every entry is a link: tapping one reads the file
+back out through the browser. That is how `battery.csv` leaves the device, and it is the
+only way to read a run made with the cable out without opening the case to find the card.
+
 **Power — off and on.** Hold for about a second and release. The reading position is saved
 first, and the panel is given a clean full refresh before sleeping: e-paper holds its image
 with no power, so whatever was drawn last is what you see while the device is off. Hold it
@@ -109,6 +113,11 @@ Worth stating plainly, because these are the things people reasonably expect:
   never seen. Press deliberately, or hold until the screen responds.
 - **No bookmark, no table of contents, no chapter jump.** Position is saved automatically,
   but there is no way to move by more than a sentence.
+- **Peak ghosting cannot be inspected on the device.** Every button handler ends in a full
+  refresh, including pause — so the one action that would freeze the panel mid-accrual is
+  also the one that clears it. To photograph ghosting at its worst, wait out the cycle
+  rather than pausing: a full refresh is visibly a flash, and the panel is most ghosted
+  about thirty-five seconds after one ends.
 - **No way to pick a book on the device.** It opens the first `.rsvp` it finds at the root
   of the card, else the first `.txt`, else a built-in passage. Books inside folders are not
   found — the scan does not descend.
