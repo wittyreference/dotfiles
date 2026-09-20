@@ -126,8 +126,37 @@ Worth stating plainly, because these are the things people reasonably expect:
 
 The firmware names buttons `Back, Confirm, Left, Right, Up, Down, Power`. Those names come
 from the community SDK's input library, which reads them off two resistor ladders on ADC
-pins. **Nothing in the code or the SDK documents where they physically sit on the device** —
-that mapping exists only in the plastic.
+pins, and nothing in the code or the SDK records where they physically sit. Established by
+handling the device, 2026-09-20, with the panel in its shipped landscape orientation:
+
+```
+        Power  Vol+  Vol-
+     +---------------------------------+
+     | agents.rsvp                     |
+     | 330 wpm  12%                    |
+     |              |                  |
+     |       the quick brown           |   <- reading band
+     |              |                  |       o
+     |                                 |       o   <- right thumb:
+     |                                 |       o      Back, Confirm,
+     |                                 |       o      Left, Right
+     +---------------------------------+
+```
+
+- **Top edge, left to right: Power, Volume up, Volume down.** They sit above the corner
+  where the document name is drawn. The two volume buttons are what the firmware calls
+  `Up` and `Down` — so the speed control is the volume rocker, which is the right place
+  for it on a device held in one hand.
+- **Right edge, clustered around the middle:** the remaining four, under the right thumb.
+  Their order within that cluster is **not yet recorded** — establish it by pressing one
+  and watching the screen (Confirm starts the text advancing; Right switches to the
+  transfer page) rather than by guessing.
+
+That cluster sits level with the reading band, which is why the reading screen carries no
+button labels: anything drawn there would compete with chunk text for the 500px budget a
+chunk has right of the focal column, and chunks need about 400 of it. The labels live on
+the sleep screen instead, where there is a whole free panel and the image persists with no
+power — see below.
 
 If you need to identify one, the fastest way is by behaviour:
 
