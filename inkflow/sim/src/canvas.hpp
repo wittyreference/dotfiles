@@ -72,6 +72,45 @@ public:
         }
     }
 
+    /// Horizontal extent of the string's actual marks, relative to the pen.
+    ///
+    /// `left` is the offset from the pen to the first inked column, which can be negative;
+    /// `width` is how many columns the marks span. Distinct from the advance, which is
+    /// what `textBounds` reports.
+    void textInk(const char* s, int& left, int& width) const {
+        left = 0;
+        width = 0;
+        if (font_ == nullptr) {
+            return;
+        }
+        int pen = 0;
+        int lo = 0;
+        int hi = 0;
+        bool any = false;
+        for (const char* p = s; *p; ++p) {
+            const GFXglyph* g = glyph(*p);
+            if (g == nullptr) {
+                continue;
+            }
+            if (g->width > 0) {
+                const int a = pen + g->xOffset;
+                const int b = a + g->width;
+                if (!any || a < lo) {
+                    lo = a;
+                }
+                if (!any || b > hi) {
+                    hi = b;
+                }
+                any = true;
+            }
+            pen += g->xAdvance;
+        }
+        if (any) {
+            left = lo;
+            width = hi - lo;
+        }
+    }
+
     /// Width and height the string would occupy, matching GFX's getTextBounds.
     void textBounds(const char* s, int& w, int& h) const {
         w = 0;

@@ -50,6 +50,18 @@ public:
     int16_t width() const override { return static_cast<int16_t>(canvas_.width()); }
     int16_t height() const override { return static_cast<int16_t>(canvas_.height()); }
 
+    void textInk(reader::Font font, const char* str, int16_t& left,
+                 int16_t& width) const override {
+        Canvas& c = const_cast<Canvas&>(canvas_);
+        const GFXfont* previous = c.currentFont();
+        c.setFont(fontFor(font));
+        int l = 0, w = 0;
+        c.textInk(str, l, w);
+        c.setFont(previous);
+        left = static_cast<int16_t>(l);
+        width = static_cast<int16_t>(w);
+    }
+
     int16_t textWidth(reader::Font font, const char* str) const override {
         int w = 0, h = 0;
         // textBounds does not draw, but it advances nothing either, so measuring through

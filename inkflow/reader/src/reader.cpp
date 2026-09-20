@@ -10,6 +10,41 @@ namespace reader {
 
 namespace {
 
+/// Copies the character at `at` out of `text`. Returns its length in bytes, or zero.
+///
+/// Needed in two places for the same reason: the pivot has to be measured while the chunk
+/// is being positioned and drawn again when it is inverted, and both want the character
+/// rather than the byte. Refuses to split a multibyte sequence -- the tokenizer flags
+/// those and the device's fonts are Latin-1, so this is belt and braces, but half a
+/// character rendered white on black would be the most confusing thing on the screen.
+size_t pivotCharBytes(const char* text, uint8_t at, char* out, size_t cap) {
+    const size_t len = strlen(text);
+    if (at >= len || cap < 5u) {
+        return 0u;
+    }
+    const unsigned char lead = static_cast<unsigned char>(text[at]);
+    size_t bytes = 1u;
+    if ((lead & 0xE0u) == 0xC0u) {
+        bytes = 2u;
+    } else if ((lead & 0xF0u) == 0xE0u) {
+        bytes = 3u;
+    } else if ((lead & 0xF8u) == 0xF0u) {
+        bytes = 4u;
+    }
+    if (at + bytes > len) {
+        bytes = 1u;
+    }
+    for (size_t i = 0u; i < bytes; ++i) {
+        out[i] = text[at + i];
+    }
+    out[bytes] = '\0';
+    return bytes;
+}
+
+}  // namespace
+
+namespace {
+
 /// Widest chunk the chunker will be asked for, in tokens.
 ///
 /// The window handed to `rsvp::chunkLength` is a fixed stack array, so the chunk size is
@@ -153,8 +188,21 @@ uint32_t Reader::buildChunk(uint32_t start, Frame& out) const {
     const int16_t prefix = prefixWidth(out.text, pivotChar);
     const int16_t chunkWidth = surface_.textWidth(Font::kChunk, out.text);
 
+    // Where the chunk wants to be: the pivot character's *ink* centred on the focal
+    // column. Not its advance box -- a glyph sits at an offset inside that box and is
+    // usually narrower than it, so aligning boxes lets the marks wander about a dozen
+    // pixels from word to word. RSVP survives on the eye never having to travel, and a
+    // fixation point that drifts by half a character is a fixation point that moves.
+    char pivotOne[8];
+    int16_t inkLeft = 0;
+    int16_t inkWidth = 0;
+    if (pivotCharBytes(out.text, pivotChar, pivotOne, sizeof(pivotOne)) != 0u) {
+        surface_.textInk(Font::kChunk, pivotOne, inkLeft, inkWidth);
+    }
+    const int16_t inkCentre = static_cast<int16_t>(inkLeft + inkWidth / 2);
+
     // Where the chunk wants to be: pivot character on the focal column.
-    const int16_t wanted = static_cast<int16_t>(layout_.focalX - prefix);
+    const int16_t wanted = static_cast<int16_t>(layout_.focalX - prefix - inkCentre);
     out.oversize = chunkWidth > layout_.width;
     out.overflows = !out.oversize && (wanted < 0 || wanted + chunkWidth > layout_.width);
 
@@ -379,13 +427,21 @@ void Reader::drawChunk(Surface& s, const Frame& frame) const {
     }
 
     const int16_t x = static_cast<int16_t>(frame.left + prefixWidth(frame.text, frame.pivot));
-    const int16_t w = s.textWidth(Font::kChunk, pivot);
-    if (w <= 0) {
+
+    // The cell is nailed to the focal column and never moves or changes size, whatever
+    // character is in it. Sizing it to each glyph would make it breathe from word to
+    // word, which is the same distraction as moving it -- and the chunk is already
+    // positioned so this character's ink is centred here, so a fixed cell fits it.
+    //
+    // Measured from a reference glyph rather than from the pivot: this font is monospace
+    // so every advance is equal, and taking the widest ordinary letter keeps the cell
+    // right if a proportional font is ever used.
+    const int16_t cell = s.textWidth(Font::kChunk, "M");
+    if (cell <= 0) {
         return;
     }
-
-    s.rect(static_cast<int16_t>(x - kPivotPadX), static_cast<int16_t>(baseline - kPivotAbove),
-           static_cast<int16_t>(w + 2 * kPivotPadX),
+    s.rect(static_cast<int16_t>(layout_.focalX - cell / 2),
+           static_cast<int16_t>(baseline - kPivotAbove), cell,
            static_cast<int16_t>(kPivotAbove + kPivotBelow), Ink::kBlack);
     s.text(Font::kChunk, x, baseline, pivot, Ink::kWhite);
 }
@@ -396,27 +452,7 @@ void Reader::drawChunk(Surface& s, const Frame& frame) const {
 /// device's fonts are Latin-1, so this is belt and braces -- but half a character rendered
 /// white on black would be the most confusing thing on the screen.
 size_t Reader::pivotBytes(const Frame& frame, char* out, size_t cap) const {
-    const size_t len = strlen(frame.text);
-    if (frame.pivot >= len || cap < 5u) {
-        return 0u;
-    }
-    const unsigned char lead = static_cast<unsigned char>(frame.text[frame.pivot]);
-    size_t n = 1u;
-    if ((lead & 0xE0u) == 0xC0u) {
-        n = 2u;
-    } else if ((lead & 0xF0u) == 0xE0u) {
-        n = 3u;
-    } else if ((lead & 0xF8u) == 0xF0u) {
-        n = 4u;
-    }
-    if (frame.pivot + n > len) {
-        n = 1u;
-    }
-    for (size_t i = 0u; i < n; ++i) {
-        out[i] = frame.text[frame.pivot + i];
-    }
-    out[n] = '\0';
-    return n;
+    return pivotCharBytes(frame.text, frame.pivot, out, cap);
 }
 
 void Reader::drawSleep(Surface& s) const {

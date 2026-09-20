@@ -22,6 +22,19 @@ public:
     int16_t width() const override { return display_.width(); }
     int16_t height() const override { return display_.height(); }
 
+    void textInk(reader::Font font, const char* str, int16_t& left,
+                 int16_t& width) const override {
+        // GxEPD2's getTextBounds reports exactly this -- the marks, not the advance --
+        // relative to the cursor it is given. Measured from zero so the result is an
+        // offset rather than a position.
+        display_.setFont(fontFor(font));
+        int16_t x1 = 0, y1 = 0;
+        uint16_t w = 0, h = 0;
+        display_.getTextBounds(str, 0, 0, &x1, &y1, &w, &h);
+        left = x1;
+        width = static_cast<int16_t>(w);
+    }
+
     int16_t textWidth(reader::Font font, const char* str) const override {
         // The font has to be selected before the glyphs can be measured, so this leaves a
         // different one selected than it found. Harmless: every draw selects its own.

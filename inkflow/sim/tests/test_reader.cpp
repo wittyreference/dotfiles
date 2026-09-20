@@ -845,3 +845,117 @@ TEST_CASE("the pivot character is inverted, not merely pointed at") {
         CHECK(ink > 0);
     }
 }
+
+// RSVP's whole mechanic is that the eye fixates once and never travels: "every chunk is
+// positioned so its pivot character lands on this column". Landing the pivot's *advance
+// box* there is not the same thing. Glyphs sit at different offsets inside their advance,
+// so the ink drifts left and right from word to word even though the arithmetic is
+// constant -- which a reader sees as the mark bopping about, and which lets a wide glyph
+// break out of the cell drawn around it.
+TEST_CASE("the pivot's ink sits on the focal column, not merely its advance box") {
+    const char* corpus =
+        "From there we look at how agents behave as systems, how to evaluate them, and "
+        "how they specialize, whether that means multiple agents collaborating, agents "
+        "that can see and hear, or the coding agents that have become a staple of modern "
+        "software development. Jaunty wizards quickly vex a jumpy fox.";
+
+    sim::Panel panel(reader::kLandscape);
+    reader::Document doc;
+    doc.useMemory(corpus, std::strlen(corpus));
+    reader::Reader r(doc, panel, reader::kLandscape);
+    r.setTiming(timingAt(330));
+    r.setPlaying(true);
+    r.renderFull();
+
+    const int16_t mid = static_cast<int16_t>(reader::kLandscape.bandY + reader::kChunkBaseline);
+    const int16_t focal = reader::kLandscape.focalX;
+
+    // Ink extent of the inverted cell's contents: the white pixels inside the black cell
+    // are the character, so their centre is where the eye is actually being sent.
+    auto whiteCentre = [&panel, mid, focal]() {
+        int lo = 9999;
+        int hi = -9999;
+        for (int16_t x = static_cast<int16_t>(focal - 30); x < static_cast<int16_t>(focal + 30);
+             ++x) {
+            for (int16_t y = mid - 26; y <= mid + 4; ++y) {
+                if (panel.canvas().pixel(x, y) != sim::kBlack &&
+                    panel.canvas().pixel(x, static_cast<int16_t>(mid - 28)) == sim::kBlack) {
+                    if (x < lo) lo = x;
+                    if (x > hi) hi = x;
+                }
+            }
+        }
+        return lo > hi ? -9999 : (lo + hi) / 2;
+    };
+
+    int checked = 0;
+    reader::Frame frame{};
+    while (r.step(frame) && checked < 20) {
+        const int centre = whiteCentre();
+        if (centre == -9999) {
+            continue;  // No ink inside the cell for this glyph, e.g. a space.
+        }
+        CAPTURE(frame.text);
+        CAPTURE(centre);
+        // Within a couple of pixels of the column, every word. Not "on average".
+        CHECK(centre >= focal - 3);
+        CHECK(centre <= focal + 3);
+        ++checked;
+    }
+    CHECK(checked > 8);
+}
+
+// The cell must be the same cell every word. RSVP buys its speed by removing eye
+// movement, so anything that twitches at the fixation point spends that saving again --
+// and a mark that changes size from word to word reads as movement even when its centre
+// is still. Sizing the cell to each glyph would do exactly that.
+TEST_CASE("the inverted cell never moves and never changes size") {
+    const char* corpus =
+        "From there we look at how agents behave as systems, how to evaluate them, and "
+        "how they specialize, whether that means multiple agents collaborating or the "
+        "coding agents that have become a staple of modern software development.";
+
+    sim::Panel panel(reader::kLandscape);
+    reader::Document doc;
+    doc.useMemory(corpus, std::strlen(corpus));
+    reader::Reader r(doc, panel, reader::kLandscape);
+    r.setTiming(timingAt(330));
+    r.setPlaying(true);
+    r.renderFull();
+
+    const int16_t mid = static_cast<int16_t>(reader::kLandscape.bandY + reader::kChunkBaseline);
+
+    // The cell's own extent: scanned along a row above the x-height, where the only ink
+    // is the cell itself rather than the letters either side of it.
+    auto cellSpan = [&panel, mid]() {
+        const int16_t y = static_cast<int16_t>(mid - 28);
+        int lo = -1;
+        int hi = -1;
+        for (int16_t x = 0; x < reader::kLandscape.width; ++x) {
+            if (panel.canvas().pixel(x, y) == sim::kBlack) {
+                if (lo < 0) {
+                    lo = x;
+                }
+                hi = x;
+            }
+        }
+        return std::pair<int, int>{lo, hi};
+    };
+
+    reader::Frame frame{};
+    REQUIRE(r.step(frame));
+    const auto first = cellSpan();
+    REQUIRE(first.first >= 0);
+
+    for (int i = 0; i < 14 && r.step(frame); ++i) {
+        CAPTURE(frame.text);
+        const auto span = cellSpan();
+        CHECK(span.first == first.first);
+        CHECK(span.second == first.second);
+    }
+
+    // And it is where the mechanic says it is.
+    const int centre = (first.first + first.second) / 2;
+    CHECK(centre >= reader::kLandscape.focalX - 2);
+    CHECK(centre <= reader::kLandscape.focalX + 2);
+}

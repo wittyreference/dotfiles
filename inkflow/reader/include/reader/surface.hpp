@@ -88,6 +88,18 @@ public:
     /// Draws `text` with its baseline at `y` and its left edge at `x`.
     virtual void text(Font font, int16_t x, int16_t y, const char* str, Ink ink) = 0;
 
+    /// Where `str`'s marks actually are, relative to the pen position.
+    ///
+    /// `textWidth` reports the *advance* -- how far the pen travels -- which is what
+    /// positions the character after this one. That is not where the ink is. A glyph sits
+    /// at an offset inside its advance box and is usually narrower than it, so a `j` and
+    /// an `M` with identical advances have their marks in quite different places.
+    ///
+    /// The difference is invisible for running text and decisive for the pivot: RSVP works
+    /// because the eye fixates on one spot and never travels, and putting the advance box
+    /// on that spot still lets the ink wander a dozen pixels word to word.
+    virtual void textInk(Font font, const char* str, int16_t& left, int16_t& width) const = 0;
+
     /// Black text, which is nearly all of it.
     void text(Font font, int16_t x, int16_t y, const char* str) {
         text(font, x, y, str, Ink::kBlack);
