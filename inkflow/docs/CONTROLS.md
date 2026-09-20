@@ -6,62 +6,53 @@ it.
 
 ## Quick reference
 
-| Button | While reading | While in WiFi transfer |
-|---|---|---|
-| **Confirm** | Play / pause | *ignored* |
-| **Left** | Rewind to the start of the sentence. Press again to step into the previous one | *ignored* |
-| **Up** | Speed up, +30 WPM | *ignored* |
-| **Down** | Slow down, −30 WPM | *ignored* |
-| **Right** | Enter WiFi transfer mode | **Leave transfer mode** |
-| **Back** | Redraw the screen, which also clears ghosting | *ignored* |
-| **Power** | **Hold ~1s to switch off.** Hold ~1s again to switch back on | **Hold ~1s to switch off** |
+| Button | While reading | In WiFi transfer | In the book list |
+|---|---|---|---|
+| **Upper rocker, top** | Speed up, +30 wpm | *ignored* | Move the selection up |
+| **Upper rocker, bottom** | Speed down, -30 wpm | *ignored* | Move the selection down |
+| **Lower rocker, top** | Play / pause | *ignored* | Open the selected book |
+| **Lower rocker, bottom** | Rewind a sentence | *ignored* | Leave without choosing |
+| **Volume up** | Open the book list | *ignored* | Leave without choosing |
+| **Volume down** | Enter WiFi transfer | **Leave transfer mode** | *ignored* |
+| **Power** | **Hold ~1s to switch off.** Hold again to switch on | **Hold ~1s to switch off** | **Hold ~1s to switch off** |
+
 
 Speed is clamped to **60–900 WPM**. The panel cannot present faster than about 330 WPM in
 three-word chunks, so numbers above that change the display without changing the pace.
 
-## The two modes
+## The three modes
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Paused: boot, after the SD scan
+    [*] --> Paused: boot
 
-    Paused --> Playing: Confirm
-    Playing --> Paused: Confirm
+    Paused --> Playing: lower rocker, top
+    Playing --> Paused: lower rocker, top
 
-    Playing --> Playing: Up / Down<br/>±30 WPM
-    Paused --> Paused: Up / Down<br/>±30 WPM
+    Playing --> Playing: upper rocker<br/>±30 WPM
+    Paused --> Paused: upper rocker<br/>±30 WPM
 
-    Playing --> Playing: Left<br/>rewind a sentence
-    Paused --> Paused: Left<br/>rewind a sentence
+    Playing --> Playing: lower rocker, bottom<br/>rewind a sentence
+    Paused --> Paused: lower rocker, bottom<br/>rewind a sentence
 
-    Playing --> Playing: Back<br/>redraw, clears ghosting
-    Paused --> Paused: Back<br/>redraw, clears ghosting
+    Paused --> Books: volume up
+    Playing --> Books: volume up<br/>(pauses first)
+    Books --> Paused: lower rocker, top<br/>opens the chosen book
+    Books --> Paused: volume up<br/>or lower rocker, bottom
 
-    Paused --> Transfer: Right
-    Playing --> Transfer: Right<br/>(pauses first)
-
-    Transfer --> Paused: Right<br/>reloads the card
+    Paused --> Transfer: volume down
+    Playing --> Transfer: volume down<br/>(pauses first)
+    Transfer --> Paused: volume down<br/>reloads the card
 
     Playing --> Off: Power, held ~1s
     Paused --> Off: Power, held ~1s
+    Books --> Off: Power, held ~1s
     Transfer --> Off: Power, held ~1s
     Off --> Paused: Power, held ~1s
 
     note right of Paused
         Paused also shows the
         sentence you are inside
-    end note
-
-    note right of Transfer
-        WiFi radio is on.
-        Only Right and Power respond.
-    end note
-
-    note left of Off
-        Deep sleep. The panel keeps
-        showing the last page drawn,
-        because e-paper needs no power
-        to hold an image.
     end note
 ```
 

@@ -15,6 +15,7 @@
 #include "InputManager.h"
 #include "config.h"
 #include "gxepd2_surface.h"
+#include "resume_key.h"
 #include "sd_source.h"
 #include "transfer.h"
 #include "reader/document.hpp"
@@ -49,6 +50,13 @@ static const char* const kButtonNames[] = {"Back",  "Confirm", "Left", "Right",
                                            "Up",    "Down",    "Power"};
 
 static bool g_transferMode = false;
+/// Whether the book list is on screen instead of the reading frame.
+static bool g_pickerMode = false;
+
+/// The RAM a .txt is tokenised into. One buffer, shared by both paths that load one:
+/// 16KB is five percent of this device's SRAM, and a second copy bought nothing --
+/// only one document is ever open.
+static char g_textBuffer[reader::kMaxTextBytes];
 /// Whether the card mounted at boot. A missing card is a normal state: the reader falls
 /// back to a built-in passage, and the diagnostics simply go unwritten.
 static bool g_sdReady = false;
@@ -199,12 +207,11 @@ static void loadDocument() {
     if (best[0] != 0) {
         File f = SD.open(best, FILE_READ);
         if (f) {
-            static char buffer[reader::kMaxTextBytes];
             const size_t got =
-                f.read(reinterpret_cast<uint8_t*>(buffer), reader::kMaxTextBytes);
+                f.read(reinterpret_cast<uint8_t*>(g_textBuffer), reader::kMaxTextBytes);
             f.close();
             if (got > 0) {
-                g_doc.useMemory(buffer, got);
+                g_doc.useMemory(g_textBuffer, got);
                 setDocumentName(best + 1);
                 return;
             }
@@ -262,9 +269,77 @@ static void renderTransfer() {
 ///
 /// Sleeping without this would cost the reader their page, which is exactly the thing the
 /// resume machinery exists to protect.
+/// Saves where the reader is, under a key belonging to this document alone.
+///
+/// One slot per book, not one slot. Resume used to be a single "doc"/"pos" pair, which is
+/// correct for a device that can only open the first file it finds and silently loses a
+/// reader's place the moment a picker lets them open a second.
 static void savePosition() {
-    g_prefs.putString("doc", g_docName);
-    g_prefs.putUInt("pos", g_reader.index());
+    char key[16];
+    if (!resumeKey(g_docName, key, sizeof(key))) {
+        return;
+    }
+    g_prefs.putUInt(key, g_reader.index());
+}
+
+/// Restores this document's position, or starts at the beginning.
+static uint32_t savedPosition(const char* name) {
+    char key[16];
+    if (!resumeKey(name, key, sizeof(key))) {
+        return 0u;
+    }
+    // Guarded by isKey() because reading an absent key logs inside Preferences at ERROR
+    // level, and a benign first run that looks like a fault in the log is how a real
+    // fault becomes hard to spot later.
+    return g_prefs.isKey(key) ? g_prefs.getUInt(key, 0u) : 0u;
+}
+
+/// Opens a named book from the card and seeks to wherever this reader left it.
+static void openDocument(const char* name) {
+    savePosition();
+
+    char path[kMaxCardPath];
+    if (!safeCardPath(name, path, sizeof(path))) {
+        return;
+    }
+
+    g_doc.close();
+    g_source.close();
+
+    const size_t n = strlen(name);
+    const bool sidecar = n > 5 && strcasecmp(name + n - 5, ".rsvp") == 0;
+    if (sidecar && g_source.open(path) && g_doc.openSidecar(g_source)) {
+        setDocumentName(name);
+    } else {
+        g_source.close();
+        File f = SD.open(path, FILE_READ);
+        bool loaded = false;
+        if (f) {
+            const size_t got =
+                f.read(reinterpret_cast<uint8_t*>(g_textBuffer), reader::kMaxTextBytes);
+            f.close();
+            if (got > 0) {
+                g_doc.useMemory(g_textBuffer, got);
+                setDocumentName(name);
+                loaded = true;
+            }
+        }
+        if (!loaded) {
+            // The card had it a moment ago and will not open it now. Say so rather than
+            // dropping the reader into a built-in passage with no explanation.
+            Serial.printf("inkflow: could not open %s\n", name);
+            return;
+        }
+    }
+
+    uint32_t at = savedPosition(g_docName);
+    if (at >= g_doc.count()) {
+        at = 0u;
+    }
+    g_reader.seek(at);
+    g_reader.setPlaying(false);
+    Serial.printf("inkflow: opened %s, %u tokens, resume at %u\n", g_docName,
+                  static_cast<unsigned>(g_doc.count()), static_cast<unsigned>(at));
 }
 
 /// Appends one reading to `/battery.csv` on the card.
@@ -370,8 +445,12 @@ void setup() {
     // level, and a first run has no saved position -- an error line for the normal case
     // is what makes a real fault hard to spot in the log later. isKey() reaches NVS
     // directly and says nothing; the comparison below is unchanged when the key is there.
-    if (g_prefs.isKey("doc") && g_prefs.getString("doc", "") == String(g_docName)) {
-        g_reader.seek(g_prefs.getUInt("pos", 0u));
+    {
+        uint32_t at = savedPosition(g_docName);
+        if (at >= g_doc.count()) {
+            at = 0u;
+        }
+        g_reader.seek(at);
     }
 
     // Three words per update is not a preference. At the measured 542ms refresh floor
@@ -412,6 +491,7 @@ void loop() {
     // Power is handled ahead of the mode branch so it works while reading and while in
     // transfer mode alike. A reader holding the power button means it, wherever they are.
     if (g_input.wasReleased(kBtnPower) && g_input.getHeldTime() > kPowerHoldMs) {
+        g_pickerMode = false;
         if (g_transferMode) {
             g_transfer.end();
             g_transferMode = false;
@@ -425,6 +505,33 @@ void loop() {
         enterDeepSleep();
     }
 
+    if (g_pickerMode) {
+        // The same two rockers, doing the same shape of thing: the upper one moves, the
+        // lower one chooses. A reader who has learnt "up is more" while reading does not
+        // have to learn a second vocabulary to open a book.
+        if (g_input.wasPressed(kBtnSpeedUp)) {
+            g_picker.moveUp();
+            g_picker.render();
+        } else if (g_input.wasPressed(kBtnSpeedDown)) {
+            g_picker.moveDown();
+            g_picker.render();
+        } else if (g_input.wasPressed(kBtnPlayPause)) {
+            const char* chosen = g_picker.name(g_picker.selected());
+            if (chosen != nullptr) {
+                openDocument(chosen);
+            }
+            g_pickerMode = false;
+            g_reader.renderFull();
+        } else if (g_input.wasPressed(kBtnPicker) || g_input.wasPressed(kBtnRewind)) {
+            // Leaving without choosing. The same button that opened the list closes it,
+            // and rewind -- "go back" -- does the obvious thing here too.
+            g_pickerMode = false;
+            g_reader.renderFull();
+        }
+        delay(5);
+        return;
+    }
+
     if (g_transferMode) {
         g_transfer.poll();
 
@@ -435,10 +542,10 @@ void loop() {
             renderTransfer();
         }
 
-        // Right both enters and leaves transfer mode, so every button on the device owns
-        // exactly one function. Back meant "redraw" while reading and "leave" here, which
-        // is two jobs for one button and one more thing for a reader to hold in their head.
-        if (g_input.wasPressed(kBtnRight)) {
+        // The same button both enters and leaves transfer mode, so every control on the
+        // device owns exactly one idea. A button that means one thing while reading and
+        // another here is one more thing for a reader to hold in their head.
+        if (g_input.wasPressed(kBtnWifi)) {
             g_transfer.end();
             g_transferMode = false;
 
@@ -459,19 +566,27 @@ void loop() {
         return;
     }
 
-    if (g_input.wasPressed(kBtnConfirm)) {
+    if (g_input.wasPressed(kBtnPlayPause)) {
         g_reader.togglePlay();
         g_reader.renderFull();
-    } else if (g_input.wasPressed(kBtnLeft)) {
+    } else if (g_input.wasPressed(kBtnRewind)) {
         g_reader.rewindSentence();
         g_reader.renderFull();
-    } else if (g_input.wasPressed(kBtnUp)) {
+    } else if (g_input.wasPressed(kBtnSpeedUp)) {
         g_reader.adjustSpeed(+30);
         g_reader.renderFull();
-    } else if (g_input.wasPressed(kBtnDown)) {
+    } else if (g_input.wasPressed(kBtnSpeedDown)) {
         g_reader.adjustSpeed(-30);
         g_reader.renderFull();
-    } else if (g_input.wasPressed(kBtnRight)) {
+    } else if (g_input.wasPressed(kBtnPicker)) {
+        // The card walk is the slow part, so it happens here rather than at boot: a
+        // reader who never opens the picker never pays for it.
+        g_reader.setPlaying(false);
+        savePosition();
+        listDocuments();
+        g_pickerMode = true;
+        g_picker.render();
+    } else if (g_input.wasPressed(kBtnWifi)) {
         g_transferMode = true;
         g_reader.setPlaying(false);
         // Let go of the card before the upload server touches it. SdSource holds the
@@ -484,9 +599,13 @@ void loop() {
         g_doc.close();
         g_transfer.begin();
         renderTransfer();
-    } else if (g_input.wasPressed(kBtnBack)) {
-        g_reader.renderFull();
     }
+
+    // Redraw has no button any more. It existed to clear ghosting by hand, and the
+    // three-tier flush now does that on its own: measured over a real book it fired at
+    // 68, 62, 61 and 76 partials, every one from the first tier, never reaching the
+    // sentence or deadline fallbacks. A control that solves a problem the device no
+    // longer has is a control a reader still has to learn.
 
     if (!g_reader.playing() || g_reader.atEnd()) {
         delay(20);
