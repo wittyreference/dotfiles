@@ -1,7 +1,9 @@
 # Status and handoff
 
-Last updated **2026-09-20**, after the reader read a real book on hardware at the pace the
-simulator predicted. Written so a fresh session can resume without re-deriving anything.
+Last updated **2026-09-20**, after the reader read a real book at the pace the simulator
+predicted, gained a book picker and a control scheme built around where the hands are, and
+had its input loop -- the last surface nothing simulated -- brought under test. Written so a
+fresh session can resume without re-deriving anything.
 
 ## Read first
 
@@ -116,15 +118,38 @@ rather than a gate on firmware changes.
 | Component | State |
 |---|---|
 | `core/` — rsvp-core | Tokenizer, boundary flags, ORP pivot, timing model, chunker, player, `.rsvp` format. **123 cases, 487 assertions** |
-| `reader/` — rsvp-reader | The reading loop, shared by the firmware and the simulator. **18 cases, 147 assertions** (run through the simulator) |
+| `reader/` — rsvp-reader | The reading loop, the book picker and the input latch, shared by the firmware and the simulator. **41 cases, 677 assertions** (run through the simulator) |
 | `tools/rsvp-mk/` | text/Markdown to `.rsvp`. **14 cases, 48 assertions, 26 CLI checks** |
 | `tools/epub-to-text/` | EPUB to text, spine order preserved. **10 tests** |
 | `bench/eink-bench/` | Panel measurement firmware. Run; results in `hardware-notes/` |
 | `sim/` | Runs the shipped loop against a modelled panel; fails the build on a layout fault; writes a GIF at true reading pace |
-| `firmware/reader/` | The reader. **Reads a 98,633-token book off the card**, sleeps and wakes on the power button. CI builds it on every push |
+| `firmware/reader/` | The reader. **Reads a 98,633-token book off the card**, picks between books, sleeps and wakes, labels its own controls while off. CI builds it on every push |
 
 Everything green: `cmake -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build -j &&
 ctest --test-dir build` gives 7/7.
+
+## The rule the input loop taught, which is the old rule again
+
+**Anything the device does that the simulator does not run will eventually be wrong.**
+
+The reading loop was extracted into `reader/` because the firmware had reimplemented the
+chunk hold and got it backwards, and the simulator stayed green for weeks because it was
+running the other copy. That lesson was learnt, written up in the README, and then applied
+to exactly one thing.
+
+The input loop was never extracted. It sampled buttons once per turn while the panel
+blocked for 500ms of every 650ms cycle, so the device was deaf three quarters of the time
+it was reading -- documented as a known limitation, and reported as "pausing doesn't seem
+to be working" by the first person to read a book on it. Same shape, same gap, second time.
+
+`Surface` now carries a `Servicer` that backends call while they block, and
+`reader::ButtonLatch` samples through it. The firmware calls it from GxEPD2's paging loop;
+the simulator calls it as it advances its modelled clock. Tests sweep a tap across every
+phase of the refresh cycle, and with the servicing removed they fail 49 assertions.
+
+What is still platform-only, and therefore still able to hide a fault like this: the card
+walk, the WiFi transfer, NVS, and the battery ADC. Each is a place to look first when
+something works on a laptop and not on the device.
 
 ## The measurements that shape everything
 
@@ -205,6 +230,10 @@ Stock is restorable at any time with `scripts/03-restore.sh`.
    read for a measured stretch, then pull the file from a phone.
 8. **Judge the pacing.** 234 WPM in three-word chunks is what the device delivers. Whether
    that is comfortable for an hour is the one question no measurement answers.
+9. **Replace the percentage with time remaining.** At token 832 of 98,633 the status line
+   reads `0%`, and will for the first thousand words of any book that size. `remainingMs()`
+   already computes reading time from the real timing model and nothing uses it; `player.hpp`
+   argues for exactly this in a comment.
 
 ## Known gaps
 
