@@ -20,6 +20,7 @@ add_executable(reader_tests
     tests/test_reader.cpp
     tests/test_gif.cpp
     tests/test_picker.cpp
+    tests/test_input.cpp
 )
 target_include_directories(reader_tests PRIVATE ${CMAKE_SOURCE_DIR}/core/tests)
 target_link_libraries(reader_tests PRIVATE sim_canvas)

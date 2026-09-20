@@ -35,8 +35,33 @@ protected:
 };
 
 /// Everything the reader needs in order to draw, and nothing about how it reaches glass.
+/// Something the panel does while a long draw blocks it.
+///
+/// A refresh is half a second on this panel, and a full one is nearly two. The reading
+/// loop cannot do anything else during that, which is fine for drawing and fatal for
+/// input: buttons sampled once a turn are deaf for the ~500ms the panel is working, and
+/// at a 650ms cycle that is three quarters of the time. A tap has to be lucky.
+///
+/// So a backend calls `service()` while it blocks -- GxEPD2 walks the framebuffer in
+/// pages and the simulator advances a modelled clock, and both can afford a call per
+/// page. What it does is the caller's business; the reading loop uses it to notice that
+/// a button went down.
+class Servicer {
+public:
+    virtual void service() = 0;
+
+protected:
+    ~Servicer() = default;
+};
+
 class Surface {
 public:
+    /// Registers something to run while a draw blocks. Null clears it.
+    ///
+    /// Not a constructor argument because the thing being serviced usually owns, or is
+    /// owned alongside, the thing doing the drawing.
+    void setServicer(Servicer* servicer) { servicer_ = servicer; }
+
     virtual int16_t width() const = 0;
     virtual int16_t height() const = 0;
 
@@ -65,6 +90,16 @@ public:
 
 protected:
     ~Surface() = default;
+
+    /// For backends to call while they block. Safe when nothing is registered.
+    void serviceWhileBusy() {
+        if (servicer_ != nullptr) {
+            servicer_->service();
+        }
+    }
+
+private:
+    Servicer* servicer_ = nullptr;
 };
 
 }  // namespace reader

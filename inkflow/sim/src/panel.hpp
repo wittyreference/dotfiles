@@ -64,7 +64,7 @@ public:
 
     void renderFull(const reader::Painter& painter) override {
         painter.paint(*this);
-        elapsedMs_ += rsvp::kPanelFullRefreshMs;
+        blockFor(rsvp::kPanelFullRefreshMs);
         ++fullRefreshes_;
         ghost_ = 0;
     }
@@ -75,7 +75,7 @@ public:
         clipped_ = true;
         painter.paint(*this);
         clipped_ = false;
-        elapsedMs_ += partialRefreshMs(h);
+        blockFor(partialRefreshMs(h));
         ++partialRefreshes_;
         ++ghost_;
         if (ghost_ > peakGhost_) {
@@ -108,6 +108,21 @@ public:
 
     /// Total time the panel would have spent refreshing, in milliseconds.
     uint64_t elapsedMs() const { return elapsedMs_; }
+    /// Advances the modelled clock in slices, servicing between them.
+    ///
+    /// The device cannot do anything else while the panel works, but it is not obliged to
+    /// be *deaf* while it does -- GxEPD2 hands control back once per page, and this models
+    /// that. The slice is deliberately coarse: it is the granularity a real page callback
+    /// offers, not an invitation to pretend the panel is interruptible.
+    void blockFor(uint32_t ms) {
+        constexpr uint32_t kSlice = 50u;
+        for (uint32_t done = 0u; done < ms; done += kSlice) {
+            const uint32_t step = (ms - done) < kSlice ? (ms - done) : kSlice;
+            elapsedMs_ += step;
+            serviceWhileBusy();
+        }
+    }
+
     uint32_t fullRefreshes() const { return fullRefreshes_; }
     uint32_t partialRefreshes() const { return partialRefreshes_; }
     /// Partial updates since the last full refresh -- how much ghosting has accrued.

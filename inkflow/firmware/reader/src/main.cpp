@@ -19,6 +19,7 @@
 #include "sd_source.h"
 #include "transfer.h"
 #include "reader/document.hpp"
+#include "reader/input.hpp"
 #include "reader/picker.hpp"
 #include "reader/layout.hpp"
 #include "reader/reader.hpp"
@@ -41,6 +42,21 @@ static reader::Reader g_reader(g_doc, g_surface, reader::kLandscape);
 /// The book list. Populated only when the reader asks for it, because the walk that
 /// fills it is the one that once took 108 seconds in silence.
 static reader::Picker g_picker(g_surface, reader::kLandscape);
+
+/// Reads every button's level straight off the resistor ladders.
+///
+/// getState() rather than the InputManager's own edge tracking: this is sampled from
+/// inside a blocking panel refresh, where the once-per-loop update() has not run and
+/// cannot. Two analogReads and a digitalRead, roughly ten times per refresh -- nothing
+/// against half a second of waveform.
+class LadderButtons : public reader::ButtonSource {
+public:
+    uint16_t levels() override { return g_input.getState(); }
+};
+
+static LadderButtons g_buttons;
+/// Catches presses that land while the panel is working, which is most of them.
+static reader::ButtonLatch g_latch(g_buttons);
 
 static Preferences g_prefs;
 static Transfer g_transfer;
@@ -460,6 +476,8 @@ void setup() {
     timing.minHoldMs = rsvp::kPanelPartialRefreshMs;
     g_reader.setTiming(timing);
     g_reader.setControls(kX4Controls);
+    // Everything the panel blocks on now services the latch while it works.
+    g_surface.setServicer(&g_latch);
 
     Serial.printf("inkflow: %s, %u tokens, %s, resume at %u\n", g_docName,
                   static_cast<unsigned>(g_doc.count()),
@@ -479,12 +497,21 @@ void loop() {
     static uint32_t lastSaved = 0;
     g_input.update();
 
+    // Sample once more here and drain. Everything the latch caught during the last
+    // refresh -- where the reader spends about three quarters of every cycle -- arrives
+    // in this one word, and is acted on exactly once however many samples saw it.
+    g_latch.service();
+    const uint16_t pressed = g_latch.take();
+    auto tapped = [pressed](uint8_t button) {
+        return (pressed & static_cast<uint16_t>(1u << button)) != 0u;
+    };
+
     // Name every press on the serial port. The device labels none of its buttons and the
     // SDK records only names on a resistor ladder, so which physical button carries which
     // name is knowable one way: press one and read what comes out. Cheap enough to leave
     // in -- a line per press, and a press is a human-speed event.
     for (uint8_t b = 0; b <= kBtnPower; ++b) {
-        if (g_input.wasPressed(b)) {
+        if (tapped(b)) {
             Serial.printf("inkflow: btn %s\n", kButtonNames[b]);
         }
     }
@@ -510,20 +537,20 @@ void loop() {
         // The same two rockers, doing the same shape of thing: the upper one moves, the
         // lower one chooses. A reader who has learnt "up is more" while reading does not
         // have to learn a second vocabulary to open a book.
-        if (g_input.wasPressed(kBtnSpeedUp)) {
+        if (tapped(kBtnSpeedUp)) {
             g_picker.moveUp();
             g_picker.render();
-        } else if (g_input.wasPressed(kBtnSpeedDown)) {
+        } else if (tapped(kBtnSpeedDown)) {
             g_picker.moveDown();
             g_picker.render();
-        } else if (g_input.wasPressed(kBtnPlayPause)) {
+        } else if (tapped(kBtnPlayPause)) {
             const char* chosen = g_picker.name(g_picker.selected());
             if (chosen != nullptr) {
                 openDocument(chosen);
             }
             g_pickerMode = false;
             g_reader.renderFull();
-        } else if (g_input.wasPressed(kBtnPicker) || g_input.wasPressed(kBtnRewind)) {
+        } else if (tapped(kBtnPicker) || tapped(kBtnRewind)) {
             // Leaving without choosing. The same button that opened the list closes it,
             // and rewind -- "go back" -- does the obvious thing here too.
             g_pickerMode = false;
@@ -547,8 +574,8 @@ void loop() {
         // brought you in. Volume-up is what leaving feels like -- it is what leaves the
         // book list -- and a reader who presses it here and gets nothing has been taught
         // a special case rather than a rule. Rewind means "back" for the same reason.
-        if (g_input.wasPressed(kBtnWifi) || g_input.wasPressed(kBtnPicker) ||
-            g_input.wasPressed(kBtnRewind)) {
+        if (tapped(kBtnWifi) || tapped(kBtnPicker) ||
+            tapped(kBtnRewind)) {
             g_transfer.end();
             g_transferMode = false;
 
@@ -569,19 +596,19 @@ void loop() {
         return;
     }
 
-    if (g_input.wasPressed(kBtnPlayPause)) {
+    if (tapped(kBtnPlayPause)) {
         g_reader.togglePlay();
         g_reader.renderFull();
-    } else if (g_input.wasPressed(kBtnRewind)) {
+    } else if (tapped(kBtnRewind)) {
         g_reader.rewindSentence();
         g_reader.renderFull();
-    } else if (g_input.wasPressed(kBtnSpeedUp)) {
+    } else if (tapped(kBtnSpeedUp)) {
         g_reader.adjustSpeed(+30);
         g_reader.renderFull();
-    } else if (g_input.wasPressed(kBtnSpeedDown)) {
+    } else if (tapped(kBtnSpeedDown)) {
         g_reader.adjustSpeed(-30);
         g_reader.renderFull();
-    } else if (g_input.wasPressed(kBtnPicker)) {
+    } else if (tapped(kBtnPicker)) {
         // The card walk is the slow part, so it happens here rather than at boot: a
         // reader who never opens the picker never pays for it.
         g_reader.setPlaying(false);
@@ -589,7 +616,7 @@ void loop() {
         listDocuments();
         g_pickerMode = true;
         g_picker.render();
-    } else if (g_input.wasPressed(kBtnWifi)) {
+    } else if (tapped(kBtnWifi)) {
         g_transferMode = true;
         g_reader.setPlaying(false);
         // Let go of the card before the upload server touches it. SdSource holds the
