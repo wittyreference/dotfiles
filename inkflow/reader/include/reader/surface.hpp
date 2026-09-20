@@ -86,7 +86,12 @@ public:
     virtual void fill(Ink ink) = 0;
     virtual void rect(int16_t x, int16_t y, int16_t w, int16_t h, Ink ink) = 0;
     /// Draws `text` with its baseline at `y` and its left edge at `x`.
-    virtual void text(Font font, int16_t x, int16_t y, const char* str) = 0;
+    virtual void text(Font font, int16_t x, int16_t y, const char* str, Ink ink) = 0;
+
+    /// Black text, which is nearly all of it.
+    void text(Font font, int16_t x, int16_t y, const char* str) {
+        text(font, x, y, str, Ink::kBlack);
+    }
 
 protected:
     ~Surface() = default;

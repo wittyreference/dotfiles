@@ -149,6 +149,7 @@ uint32_t Reader::buildChunk(uint32_t start, Frame& out) const {
         pivot = 255;
     }
     const uint8_t pivotChar = static_cast<uint8_t>(pivot);
+    out.pivot = pivotChar;
     const int16_t prefix = prefixWidth(out.text, pivotChar);
     const int16_t chunkWidth = surface_.textWidth(Font::kChunk, out.text);
 
@@ -272,13 +273,14 @@ void Reader::drawStatus(Surface& s) const {
 }
 
 void Reader::drawGuides(Surface& s) const {
-    // A colour highlight is the usual way to mark the recognition point, and a 1-bit
-    // panel cannot do it. These ticks sit outside the band that gets redrawn, so they are
-    // drawn once per full refresh and cost nothing per word.
-    s.rect(static_cast<int16_t>(layout_.focalX - 1), static_cast<int16_t>(layout_.bandY - 26),
-           3, 16, Ink::kBlack);
-    s.rect(static_cast<int16_t>(layout_.focalX - 1),
-           static_cast<int16_t>(layout_.bandY + layout_.bandH + 10), 3, 16, Ink::kBlack);
+    // Nothing. The recognition point is marked by inverting the character itself -- see
+    // drawChunk -- which says about a letter what these ticks said about a column, and
+    // says it where the eye is actually looking.
+    //
+    // Kept as a step rather than deleted because the frame's composition is worth reading
+    // straight down: fill, status, guides, chunk, context. An empty guide is a smaller
+    // surprise than a missing one.
+    (void)s;
 }
 
 void Reader::drawContext(Surface& s) const {
@@ -359,8 +361,62 @@ void Reader::drawContext(Surface& s) const {
 }
 
 void Reader::drawChunk(Surface& s, const Frame& frame) const {
-    s.text(Font::kChunk, frame.left,
-           static_cast<int16_t>(layout_.bandY + kChunkBaseline), frame.text);
+    const int16_t baseline = static_cast<int16_t>(layout_.bandY + kChunkBaseline);
+    s.text(Font::kChunk, frame.left, baseline, frame.text);
+
+    // Invert the recognition point: a filled cell with the character knocked out of it.
+    //
+    // Every RSVP reader since Spritz colours this one character, and a 1-bit panel has no
+    // colour -- which is why this project first marked the focal *column* with static
+    // ticks instead. Inversion is what one bit can do, and it marks the letter rather
+    // than the column the letter happens to be near.
+    //
+    // It costs no time. The cell is drawn inside the band that is already being redrawn
+    // for every chunk, so it adds ink rather than refreshes.
+    char pivot[8];
+    if (pivotBytes(frame, pivot, sizeof(pivot)) == 0u) {
+        return;
+    }
+
+    const int16_t x = static_cast<int16_t>(frame.left + prefixWidth(frame.text, frame.pivot));
+    const int16_t w = s.textWidth(Font::kChunk, pivot);
+    if (w <= 0) {
+        return;
+    }
+
+    s.rect(static_cast<int16_t>(x - kPivotPadX), static_cast<int16_t>(baseline - kPivotAbove),
+           static_cast<int16_t>(w + 2 * kPivotPadX),
+           static_cast<int16_t>(kPivotAbove + kPivotBelow), Ink::kBlack);
+    s.text(Font::kChunk, x, baseline, pivot, Ink::kWhite);
+}
+
+/// Copies the pivot character out of a frame's text. Returns its length in bytes.
+///
+/// Refuses rather than splitting a multibyte character: the tokenizer flags those and the
+/// device's fonts are Latin-1, so this is belt and braces -- but half a character rendered
+/// white on black would be the most confusing thing on the screen.
+size_t Reader::pivotBytes(const Frame& frame, char* out, size_t cap) const {
+    const size_t len = strlen(frame.text);
+    if (frame.pivot >= len || cap < 5u) {
+        return 0u;
+    }
+    const unsigned char lead = static_cast<unsigned char>(frame.text[frame.pivot]);
+    size_t n = 1u;
+    if ((lead & 0xE0u) == 0xC0u) {
+        n = 2u;
+    } else if ((lead & 0xF0u) == 0xE0u) {
+        n = 3u;
+    } else if ((lead & 0xF8u) == 0xF0u) {
+        n = 4u;
+    }
+    if (frame.pivot + n > len) {
+        n = 1u;
+    }
+    for (size_t i = 0u; i < n; ++i) {
+        out[i] = frame.text[frame.pivot + i];
+    }
+    out[n] = '\0';
+    return n;
 }
 
 void Reader::drawSleep(Surface& s) const {

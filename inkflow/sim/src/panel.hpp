@@ -99,9 +99,10 @@ public:
         canvas_.fillRect(x, y, w, h, ink == reader::Ink::kBlack ? kBlack : kWhite);
     }
 
-    void text(reader::Font font, int16_t x, int16_t y, const char* str) override {
+    void text(reader::Font font, int16_t x, int16_t y, const char* str,
+              reader::Ink ink) override {
         canvas_.setFont(fontFor(font));
-        canvas_.setTextColor(kBlack);
+        canvas_.setTextColor(ink == reader::Ink::kBlack ? kBlack : kWhite);
         canvas_.setCursor(x, y);
         canvas_.print(str);
     }

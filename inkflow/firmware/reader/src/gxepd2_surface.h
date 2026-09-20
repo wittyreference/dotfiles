@@ -49,9 +49,10 @@ public:
         display_.fillRect(x, y, w, h, colour(ink));
     }
 
-    void text(reader::Font font, int16_t x, int16_t y, const char* str) override {
+    void text(reader::Font font, int16_t x, int16_t y, const char* str,
+              reader::Ink ink) override {
         display_.setFont(fontFor(font));
-        display_.setTextColor(GxEPD_BLACK);
+        display_.setTextColor(colour(ink));
         display_.setCursor(x, y);
         display_.print(str);
     }

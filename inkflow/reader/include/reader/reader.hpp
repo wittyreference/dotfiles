@@ -35,6 +35,11 @@ struct Frame {
     /// Leftmost and rightmost pixel the chunk occupies as drawn.
     int16_t left;
     int16_t right;
+    /// Byte index of the recognition-point character within `text`.
+    ///
+    /// Carried on the frame rather than recomputed at draw time: it is decided while the
+    /// chunk is being positioned, and a second derivation is a second thing to get wrong.
+    uint8_t pivot;
     /// True when the chunk could not be placed with its pivot on the focal column
     /// without running off the screen. The geometry is wrong, not the text.
     bool overflows;
@@ -139,6 +144,7 @@ private:
     void drawSleep(Surface& s) const;
     void drawControls(Surface& s) const;
     void drawChunk(Surface& s, const Frame& frame) const;
+    size_t pivotBytes(const Frame& frame, char* out, size_t cap) const;
 
     // Painters are nested so a frame's contents can be redrawn on demand: GxEPD2 walks
     // the framebuffer in pages and calls back once per page.

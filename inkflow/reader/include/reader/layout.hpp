@@ -50,6 +50,17 @@ inline constexpr Layout kPortrait{480, 800, 330, 120, 190};
 /// Baseline of the chunk text, measured down from the top of the band.
 inline constexpr int16_t kChunkBaseline = 70;
 
+/// The inverted cell drawn behind the recognition-point character, measured from the
+/// chunk's baseline.
+///
+/// Tight to the character's own advance rather than generous around it. The cell is
+/// painted over text that is already drawn, so every pixel it adds beyond the pivot eats
+/// a neighbour: at two pixels of horizontal padding it cut the descender off the `y` in
+/// "systems". A monospace advance is the right width by construction.
+inline constexpr int16_t kPivotAbove = 30;
+inline constexpr int16_t kPivotBelow = 7;
+inline constexpr int16_t kPivotPadX = 0;
+
 /// Full refresh clears ghosting but costs 1958ms (measured), so it is spent where the
 /// timing model already inserts a pause and the reader will not feel it as a stall.
 ///

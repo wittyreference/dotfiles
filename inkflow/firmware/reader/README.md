@@ -45,14 +45,21 @@ transfer scales.
 Classic single-word RSVP is not possible on this panel. See
 [`../../docs/REFRESH-MEASUREMENTS.md`](../../docs/REFRESH-MEASUREMENTS.md).
 
-## Why the pivot is two ticks and not a red letter
+## Why the pivot is inverted and not a red letter
 
 Every RSVP reader since Spritz marks the optimal recognition point by colouring one
-character. A 1-bit panel cannot. So two static guide marks bracket the focal column, and
-each chunk is positioned so its pivot character lands between them.
+character. A 1-bit panel has no colour to spend — but it has inversion, which is the same
+idea in the only currency this screen has. The pivot character is drawn in white on a
+filled black cell, and each chunk is positioned so that cell lands on the focal column.
 
-They sit *outside* the band that gets redrawn, so they are drawn once and cost nothing
-per word — which on a panel this slow is the difference between a design and a nice idea.
+It costs no time. The cell is inside the band already being redrawn for every chunk, so it
+adds ink rather than refreshes — which on a panel this slow is the difference between a
+design and a nice idea.
+
+This began as two static ticks bracketing the column, on the reasoning that mono could do
+no better. They were genuinely free, sitting outside the redrawn band entirely. But they
+marked the column the letter was near rather than the letter, and left the eye to do the
+last step itself.
 
 ## Building
 

@@ -16,6 +16,7 @@
 #include <cstring>
 #include <initializer_list>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -205,24 +206,42 @@ TEST_CASE("the panel model charges the measured refresh cost") {
     CHECK(rsvp::kPanelFullRefreshMs == 1958u);
 }
 
-TEST_CASE("a band update leaves the guide marks standing") {
-    // The ticks sit outside the redrawn band precisely so they survive partial updates.
-    // If a band update cleared the whole screen they would vanish after the first word.
+TEST_CASE("a band update leaves the rest of the screen standing") {
+    // A partial update must redraw only its band. If fill() ignored the window it would
+    // clear the whole screen every word, and the status line -- only ever drawn on a full
+    // refresh -- would vanish after the first chunk.
+    //
+    // This used to assert on the focal guide ticks, which sat outside the band for exactly
+    // this reason. The ticks are gone now that the pivot inverts instead, so the property
+    // is checked against the status line, which is still up there.
     sim::Panel panel(reader::kLandscape);
     reader::Document doc = makeDocument();
     reader::Reader r(doc, panel, reader::kLandscape);
+    r.setName("agents.rsvp");
     r.setTiming(timingAt(330));
     r.setPlaying(true);
-
     r.renderFull();
+
+    auto statusInk = [&panel]() {
+        int ink = 0;
+        for (int16_t y = 40; y < 100; ++y) {
+            for (int16_t x = 0; x < 400; ++x) {
+                if (panel.canvas().pixel(x, y) == sim::kBlack) {
+                    ++ink;
+                }
+            }
+        }
+        return ink;
+    };
+
+    const int before = statusInk();
+    REQUIRE(before > 0);
+
     reader::Frame frame{};
     REQUIRE(r.step(frame));
     REQUIRE_FALSE(frame.fullRefresh);
 
-    // The upper tick is at bandY - 26, above the band, and is 16px tall.
-    const int tickX = reader::kLandscape.focalX;
-    const int tickY = reader::kLandscape.bandY - 20;
-    CHECK(panel.canvas().pixel(tickX, tickY) == sim::kBlack);
+    CHECK(statusInk() == before);
 }
 
 TEST_CASE("ghosting is cleared within a bound even without paragraph breaks") {
@@ -745,5 +764,84 @@ TEST_CASE("the sleep screen labels the buttons where the buttons are") {
         r2.renderSleep();
         CHECK(bare.fullRefreshes() == 1u);
         CHECK(inkIn(0, 0, 800, 480) >= 0);
+    }
+}
+
+// Every RSVP reader since Spritz marks the recognition point by colouring one character,
+// and this panel has no colour. The project's first answer was static guide ticks above
+// and below the focal column -- free, because they sat outside the band that gets
+// redrawn, but they marked a *column* rather than the letter the eye should land on.
+//
+// One bit is enough to invert. A black cell with the character knocked out of it in white
+// marks the letter itself, and costs nothing extra: it is drawn inside the band, which is
+// already being redrawn for every chunk.
+TEST_CASE("the pivot character is inverted, not merely pointed at") {
+    sim::Panel panel(reader::kLandscape);
+    reader::Document doc = makeDocument();
+    reader::Reader r(doc, panel, reader::kLandscape);
+    r.setTiming(timingAt(330));
+    r.setPlaying(true);
+    r.renderFull();
+
+    reader::Frame frame{};
+    REQUIRE(r.step(frame));
+
+    const int16_t mid = static_cast<int16_t>(reader::kLandscape.bandY + reader::kChunkBaseline);
+    const int16_t focal = reader::kLandscape.focalX;
+
+    auto column = [&panel, mid](int16_t x) {
+        int black = 0;
+        int white = 0;
+        for (int16_t y = mid - 30; y <= mid + 6; ++y) {
+            if (panel.canvas().pixel(x, y) == sim::kBlack) {
+                ++black;
+            } else {
+                ++white;
+            }
+        }
+        return std::pair<int, int>{black, white};
+    };
+
+    SUBCASE("the focal column carries a solid cell of ink") {
+        // Not a stroke or a tick: a filled cell, so the eye lands on a shape rather than
+        // hunting between two marks.
+        CHECK(column(focal).first > 20);
+    }
+
+    SUBCASE("the character is knocked out of the cell in white") {
+        // The whole point. A solid block with nothing in it would be a cursor; the letter
+        // has to stay legible through the inversion.
+        int whiteInsideCell = 0;
+        for (int16_t x = focal; x < static_cast<int16_t>(focal + 20); ++x) {
+            for (int16_t y = mid - 26; y <= mid + 2; ++y) {
+                if (panel.canvas().pixel(x, y) != sim::kBlack &&
+                    panel.canvas().pixel(static_cast<int16_t>(x - 2), y) == sim::kBlack) {
+                    ++whiteInsideCell;
+                }
+            }
+        }
+        CHECK(whiteInsideCell > 10);
+    }
+
+    SUBCASE("only the pivot inverts") {
+        // Inverting more would be a highlight, and a highlight spanning several characters
+        // tells the eye nothing about where to land.
+        const auto wellRight = column(static_cast<int16_t>(focal + 120));
+        CHECK(wellRight.second > wellRight.first);
+    }
+
+    SUBCASE("the cell does not eat its neighbours") {
+        // The cell is painted over text already drawn, so any padding beyond the pivot's
+        // own advance clips whatever is next to it -- at two pixels it took the descender
+        // off a `y`. Ink immediately left of the cell must survive.
+        int ink = 0;
+        for (int16_t x = static_cast<int16_t>(focal - 20); x < focal; ++x) {
+            for (int16_t y = mid - 26; y <= mid + 6; ++y) {
+                if (panel.canvas().pixel(x, y) == sim::kBlack) {
+                    ++ink;
+                }
+            }
+        }
+        CHECK(ink > 0);
     }
 }
