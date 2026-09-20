@@ -59,7 +59,14 @@ inline constexpr int16_t kChunkBaseline = 70;
 /// "systems". A monospace advance is the right width by construction.
 inline constexpr int16_t kPivotAbove = 30;
 inline constexpr int16_t kPivotBelow = 7;
-inline constexpr int16_t kPivotPadX = 0;
+/// How far the inverted cell extends past the ink it contains, each side.
+///
+/// One pixel, because one pixel is what this font has to give. Measured gaps between
+/// adjacent glyph ink run from 5px down to **minus two** -- `mm` and `MM` overlap outright
+/// -- so a cell that guarantees clear space either side of itself cannot exist here. This
+/// is the tightest box that still reads as a box, and it encroaches on a neighbour only
+/// where the letters were already touching.
+inline constexpr int16_t kPivotGutter = 1;
 
 /// Full refresh clears ghosting but costs 1958ms (measured), so it is spent where the
 /// timing model already inserts a pause and the reader will not feel it as a stall.

@@ -428,18 +428,22 @@ void Reader::drawChunk(Surface& s, const Frame& frame) const {
 
     const int16_t x = static_cast<int16_t>(frame.left + prefixWidth(frame.text, frame.pivot));
 
-    // The cell is nailed to the focal column and never moves or changes size, whatever
-    // character is in it. Sizing it to each glyph would make it breathe from word to
-    // word, which is the same distraction as moving it -- and the chunk is already
-    // positioned so this character's ink is centred here, so a fixed cell fits it.
+    // The cell hugs this character's ink, with a gutter, and is centred on the focal
+    // column -- so its centre never moves while its width follows the letter.
     //
-    // Measured from a reference glyph rather than from the pivot: this font is monospace
-    // so every advance is equal, and taking the widest ordinary letter keeps the cell
-    // right if a proportional font is ever used.
-    const int16_t cell = s.textWidth(Font::kChunk, "M");
-    if (cell <= 0) {
+    // A fixed width cannot work in this font. Glyph ink runs up to 23px against a 21px
+    // advance, so letters overhang their own boxes: a cell narrow enough to clear its
+    // neighbours cannot contain an `M`, and one wide enough for an `M` covers ink either
+    // side of it. Measured, not assumed. Hugging the glyph resolves it -- the mark
+    // breathes by a few pixels as letters change, which is much less than it would move
+    // if it clipped or overflowed.
+    int16_t inkLeft = 0;
+    int16_t inkWidth = 0;
+    s.textInk(Font::kChunk, pivot, inkLeft, inkWidth);
+    if (inkWidth <= 0) {
         return;
     }
+    const int16_t cell = static_cast<int16_t>(inkWidth + 2 * kPivotGutter);
     s.rect(static_cast<int16_t>(layout_.focalX - cell / 2),
            static_cast<int16_t>(baseline - kPivotAbove), cell,
            static_cast<int16_t>(kPivotAbove + kPivotBelow), Ink::kBlack);
