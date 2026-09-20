@@ -323,7 +323,10 @@ void loop() {
             renderTransfer();
         }
 
-        if (g_input.wasPressed(kBtnBack)) {
+        // Right both enters and leaves transfer mode, so every button on the device owns
+        // exactly one function. Back meant "redraw" while reading and "leave" here, which
+        // is two jobs for one button and one more thing for a reader to hold in their head.
+        if (g_input.wasPressed(kBtnRight)) {
             g_transfer.end();
             g_transferMode = false;
 
