@@ -1,7 +1,7 @@
 # Status and handoff
 
-Last updated **2026-09-20**, after the reader ran on hardware and the firmware build was
-put under CI. Written so a fresh session can resume without re-deriving anything.
+Last updated **2026-09-20**, after the reader read a real book on hardware at the pace the
+simulator predicted. Written so a fresh session can resume without re-deriving anything.
 
 ## Read first
 
@@ -114,7 +114,7 @@ rather than a gate on firmware changes.
 | `tools/epub-to-text/` | EPUB to text, spine order preserved. **10 tests** |
 | `bench/eink-bench/` | Panel measurement firmware. Run; results in `hardware-notes/` |
 | `sim/` | Runs the shipped loop against a modelled panel; fails the build on a layout fault; writes a GIF at true reading pace |
-| `firmware/reader/` | The reader. Compiles for esp32-c3 — RAM 122404, flash 855342. **Flashed, and run: it played a passage end to end.** CI builds it on every push |
+| `firmware/reader/` | The reader. **Reads a 98,633-token book off the card**, sleeps and wakes on the power button. CI builds it on every push |
 
 Everything green: `cmake -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build -j &&
 ctest --test-dir build` gives 7/7.
@@ -183,24 +183,29 @@ Stock is restorable at any time with `scripts/03-restore.sh`.
 2. ~~Flash the reader~~ — **done.** Written and verified at `0x10000`.
 3. ~~Power-cycle and watch the serial port~~ — **done.** All six bring-up lines came out
    and the built-in passage played end to end.
-4. **Transfer a book over WiFi.** This has never worked and is the largest untested surface
-   in the tree: 167 lines of streaming upload that no test runs. Press Right for transfer
-   mode, join `inkflow` / `inkflow-reader`, open `http://192.168.4.1`, upload
-   `agents.rsvp`, press Right again. **Upload from a phone, not from this Mac** — its VPN
-   pins `192.168.4.1` into a tunnel.
-5. **Read it, and tune from the experience.** Nobody has yet confirmed the pacing works.
-   That is the one question no amount of measurement answers — but the speed control does
-   respond now, which it did not before, so tuning against it will produce real data.
-6. **Measure power on battery.** The bench ran on USB, so its battery figures are
-   meaningless. Sustained-refresh cost on a 650 mAh cell is the last open hardware risk.
+4. ~~Read a real book~~ — **done.** 98,633 tokens streamed off the card, 234 WPM delivered
+   against the simulator's predicted 245, zero faults. See
+   [`../hardware-notes/first-book-20260920.md`](../hardware-notes/first-book-20260920.md).
+5. ~~Sleep and wake~~ — **done.** The power button saves position, draws the sleep screen
+   and enters deep sleep, first run.
+6. **Transfer a book over WiFi.** Still the largest untested surface in the tree: 167 lines
+   of streaming upload that no test runs. Press Right for transfer mode, join `inkflow` /
+   `inkflow-reader`, open `http://192.168.4.1`, upload `agents.rsvp`, press Right again.
+   **Upload from a phone, not from this Mac** — its VPN pins `192.168.4.1` into a tunnel.
+7. **Measure power on battery, with the cable out.** USB is also the charger: measured over
+   serial the cell reads *rising*. The reader now writes `/battery.csv` to the card and the
+   transfer page serves it back at `/get?f=battery.csv`, so the run is possible — unplug,
+   read for a measured stretch, then pull the file from a phone.
+8. **Judge the pacing.** 234 WPM in three-word chunks is what the device delivers. Whether
+   that is comfortable for an hour is the one question no measurement answers.
 
 ## Known gaps
 
-- The reader has never displayed a real book. Sixty-six tokens of built-in passage is not
-  a book, and nothing has yet streamed a sidecar off a card on the device.
 - The WiFi transfer has never completed. The AP comes up and the server answers, but no
   file has ever moved.
 - The pacing has never been judged by a reader.
+- Peak ghosting cannot be inspected on the device: every button handler ends in a full
+  refresh, pause included, so the action that would freeze the panel also clears it.
 - Ghosting is bounded but unquantified. The reader now forces a full refresh within 120
   partial updates, and the simulator counts them, but "how ghosted is too ghosted" has been
   assessed by eye, on one panel, once.
