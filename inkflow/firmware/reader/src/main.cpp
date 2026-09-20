@@ -39,6 +39,11 @@ static reader::Reader g_reader(g_doc, g_surface, reader::kLandscape);
 
 static Preferences g_prefs;
 static Transfer g_transfer;
+/// The SDK's own names, in its own index order. Copied rather than borrowed because the
+/// SDK keeps its table private, and vendored code is not ours to edit.
+static const char* const kButtonNames[] = {"Back",  "Confirm", "Left", "Right",
+                                           "Up",    "Down",    "Power"};
+
 static bool g_transferMode = false;
 /// Whether the card mounted at boot. A missing card is a normal state: the reader falls
 /// back to a built-in passage, and the diagnostics simply go unwritten.
@@ -340,6 +345,16 @@ void setup() {
 void loop() {
     static uint32_t lastSaved = 0;
     g_input.update();
+
+    // Name every press on the serial port. The device labels none of its buttons and the
+    // SDK records only names on a resistor ladder, so which physical button carries which
+    // name is knowable one way: press one and read what comes out. Cheap enough to leave
+    // in -- a line per press, and a press is a human-speed event.
+    for (uint8_t b = 0; b <= kBtnPower; ++b) {
+        if (g_input.wasPressed(b)) {
+            Serial.printf("inkflow: btn %s\n", kButtonNames[b]);
+        }
+    }
 
     // Power is handled ahead of the mode branch so it works while reading and while in
     // transfer mode alike. A reader holding the power button means it, wherever they are.

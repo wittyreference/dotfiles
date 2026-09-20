@@ -130,27 +130,37 @@ pins, and nothing in the code or the SDK records where they physically sit. Esta
 handling the device, 2026-09-20, with the panel in its shipped landscape orientation:
 
 ```
-        Power  Vol+  Vol-
+        [P]   [ Vol +/- ]
      +---------------------------------+
      | agents.rsvp                     |
      | 330 wpm  12%                    |
-     |              |                  |
-     |       the quick brown           |   <- reading band
-     |              |                  |       o
-     |                                 |       o   <- right thumb:
-     |                                 |       o      Back, Confirm,
-     |                                 |       o      Left, Right
+     |              |                  |  [ ]  <- upper rocker
+     |       the quick brown           |  [ ]
+     |              |                  |  [ ]  <- lower rocker
+     |                                 |  [ ]
      +---------------------------------+
 ```
 
-- **Top edge, left to right: Power, Volume up, Volume down.** They sit above the corner
-  where the document name is drawn. The two volume buttons are what the firmware calls
-  `Up` and `Down` — so the speed control is the volume rocker, which is the right place
-  for it on a device held in one hand.
-- **Right edge, clustered around the middle:** the remaining four, under the right thumb.
-  Their order within that cluster is **not yet recorded** — establish it by pressing one
-  and watching the screen (Confirm starts the text advancing; Right switches to the
-  transfer page) rather than by guessing.
+**Three physical controls, seven logical buttons.** Power is a single button; everything
+else is a rocker, pressed at one end or the other. That is why the SDK reports seven — it
+is not a generic count across a product family, it is this device:
+
+| Physical | Where | Logical |
+|---|---|---|
+| Power | top edge, solo, leftmost | `Power` |
+| Volume rocker | top edge, right of Power | `Up` / `Down` |
+| Upper rocker | right edge, under the thumb | two of `Back`/`Confirm`/`Left`/`Right` |
+| Lower rocker | right edge, below it | the other two |
+
+- **Top edge: Power, then the volume rocker**, above the corner where the document name is
+  drawn. The rocker is what the firmware calls `Up` and `Down` — so the speed control is
+  the volume rocker, which is exactly the right place for it on a device held in one hand,
+  and is worth treating as a design fact rather than an accident of the SDK's naming.
+- **Right edge: two rockers**, clustered around the middle under the thumb, carrying
+  `Back`, `Confirm`, `Left` and `Right` between them. **Which end is which is not yet
+  recorded** — establish it by pressing and watching the screen rather than by guessing:
+  Confirm starts the text advancing, Right switches the whole screen to the transfer page,
+  Left jumps the text backwards, and Back redraws without changing anything.
 
 That cluster sits level with the reading band, which is why the reading screen carries no
 button labels: anything drawn there would compete with chunk text for the 500px budget a

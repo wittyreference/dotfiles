@@ -4,6 +4,7 @@
 add_library(rsvp_reader STATIC
     src/document.cpp
     src/reader.cpp
+    src/picker.cpp
 )
 
 target_include_directories(rsvp_reader PUBLIC include)
