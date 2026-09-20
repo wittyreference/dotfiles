@@ -1,8 +1,7 @@
 # Status and handoff
 
-Last updated **2026-09-18**, after the simulator was made authoritative, the firmware was
-rebound onto it, and the panel was recovered. Written so a fresh session can resume
-without re-deriving anything.
+Last updated **2026-09-20**, after the reader ran on hardware and the firmware build was
+put under CI. Written so a fresh session can resume without re-deriving anything.
 
 ## Read first
 
@@ -115,7 +114,7 @@ rather than a gate on firmware changes.
 | `tools/epub-to-text/` | EPUB to text, spine order preserved. **10 tests** |
 | `bench/eink-bench/` | Panel measurement firmware. Run; results in `hardware-notes/` |
 | `sim/` | Runs the shipped loop against a modelled panel; fails the build on a layout fault; writes a GIF at true reading pace |
-| `firmware/reader/` | The reader. Compiles for esp32-c3 — RAM 122300, flash 847684. **Written to app0 and verified. Has not yet been run** |
+| `firmware/reader/` | The reader. Compiles for esp32-c3 — RAM 122404, flash 855342. **Flashed, and run: it played a passage end to end.** CI builds it on every push |
 
 Everything green: `cmake -B build -DCMAKE_BUILD_TYPE=Debug && cmake --build build -j &&
 ctest --test-dir build` gives 7/7.
@@ -159,29 +158,36 @@ bisect.
 
 ## Current device state
 
-`app0` holds the inkflow reader — 880,720 bytes, sha256
-`d5b93156...34ad5318`, written and verified against the flash.
+`app0` holds an inkflow reader built before the SD-scan fix — 880,720 bytes, sha256
+`d5b93156...34ad5318`. That image is no longer reproducible from HEAD, which is part of why
+the platform is now pinned.
 
-**It has not been power-cycled, so it has not yet run.** `--after no-reset` deliberately
-leaves the device in the ROM bootloader; the reader starts on the next power cycle. The
-serial port is the fastest way to see what happens then, because this firmware builds with
-`ARDUINO_USB_CDC_ON_BOOT=1` and holds USB up after boot, unlike stock. Six lines come out
-at startup — `boot`, `input ok`, `display ok`, `sd ok|absent`, `document loaded`, and a
-summary naming the document, its token count, streamed-or-RAM, and the resume index. They
-distinguish a panel fault from a card fault without anyone reading the screen.
+**It has run.** Six bring-up lines came out at startup — `boot`, `input ok`, `display ok`,
+`sd ok`, `document loaded`, and a summary naming the document, its token count,
+streamed-or-RAM and the resume index — and then, on Confirm, the built-in passage played
+through 24 partial and 4 full refreshes and stopped cleanly. Full account in
+[`../hardware-notes/first-reading-20260918.md`](../hardware-notes/first-reading-20260918.md).
+
+Those six lines distinguish a panel fault from a card fault without anyone reading the
+screen, which is why they exist. The serial port stays the fastest way to see what the
+device is doing, because this firmware builds with `ARDUINO_USB_CDC_ON_BOOT=1` and holds
+USB up after boot, unlike stock — which also means **our own builds need no power-cycle**:
+`esptool --port <port> --after hard-reset chip-id` boots the freshly written app and USB
+survives it. The `--after no-reset` rule above is about stock.
 
 Stock is restorable at any time with `scripts/03-restore.sh`.
 
 ## What to do next
 
 1. ~~Recover the panel~~ — **done.** The sample firmware drew after a power-cycle.
-2. ~~Flash the reader~~ — **done.** Written and verified at `0x10000`; not yet run.
-3. **Power-cycle and watch the serial port.** This is the next action and the only one
-   that needs someone at the device. Six bring-up lines say whether the panel, the card
-   and the document all came up.
-4. **Transfer the book.** Press Right on the reader for WiFi transfer, join network
-   `inkflow` / `inkflow-reader`, open `http://192.168.4.1`, upload `agents.rsvp`, press
-   Back.
+2. ~~Flash the reader~~ — **done.** Written and verified at `0x10000`.
+3. ~~Power-cycle and watch the serial port~~ — **done.** All six bring-up lines came out
+   and the built-in passage played end to end.
+4. **Transfer a book over WiFi.** This has never worked and is the largest untested surface
+   in the tree: 167 lines of streaming upload that no test runs. Press Right for transfer
+   mode, join `inkflow` / `inkflow-reader`, open `http://192.168.4.1`, upload
+   `agents.rsvp`, press Right again. **Upload from a phone, not from this Mac** — its VPN
+   pins `192.168.4.1` into a tunnel.
 5. **Read it, and tune from the experience.** Nobody has yet confirmed the pacing works.
    That is the one question no amount of measurement answers — but the speed control does
    respond now, which it did not before, so tuning against it will produce real data.
@@ -190,8 +196,11 @@ Stock is restorable at any time with `scripts/03-restore.sh`.
 
 ## Known gaps
 
-- The reader has never displayed a real book. Everything is verified except the thing
-  itself.
+- The reader has never displayed a real book. Sixty-six tokens of built-in passage is not
+  a book, and nothing has yet streamed a sidecar off a card on the device.
+- The WiFi transfer has never completed. The AP comes up and the server answers, but no
+  file has ever moved.
+- The pacing has never been judged by a reader.
 - Ghosting is bounded but unquantified. The reader now forces a full refresh within 120
   partial updates, and the simulator counts them, but "how ghosted is too ghosted" has been
   assessed by eye, on one panel, once.
