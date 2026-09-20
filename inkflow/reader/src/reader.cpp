@@ -49,6 +49,19 @@ private:
     const Frame& frame_;
 };
 
+class Reader::SleepPainter : public Painter {
+public:
+    explicit SleepPainter(const Reader& reader) : reader_(reader) {}
+
+    void paint(Surface& s) const override {
+        s.fill(Ink::kWhite);
+        reader_.drawSleep(s);
+    }
+
+private:
+    const Reader& reader_;
+};
+
 void Reader::setName(const char* name) {
     if (name == nullptr) {
         return;
@@ -348,6 +361,45 @@ void Reader::drawContext(Surface& s) const {
 void Reader::drawChunk(Surface& s, const Frame& frame) const {
     s.text(Font::kChunk, frame.left,
            static_cast<int16_t>(layout_.bandY + kChunkBaseline), frame.text);
+}
+
+void Reader::drawSleep(Surface& s) const {
+    // The guide ticks and the focal column, same as the reading screen, so the device
+    // still looks like itself rather than like a crash.
+    const int16_t mid = static_cast<int16_t>(layout_.bandY + kChunkBaseline);
+    s.rect(static_cast<int16_t>(layout_.focalX - 1), static_cast<int16_t>(mid - 78), 3, 22,
+           Ink::kBlack);
+    s.rect(static_cast<int16_t>(layout_.focalX - 1), static_cast<int16_t>(mid + 26), 3, 22,
+           Ink::kBlack);
+
+    // The wordmark sits on the focal column, because that column is the whole product.
+    const char* mark = "inkflow";
+    const int16_t markWidth = s.textWidth(Font::kChunk, mark);
+    s.text(Font::kChunk, static_cast<int16_t>(layout_.focalX - markWidth / 2), mid, mark);
+
+    // A rule the full width of the panel: unmistakably deliberate, and nothing a
+    // half-finished refresh would ever leave behind.
+    const int16_t ruleY = static_cast<int16_t>(mid + 72);
+    s.rect(60, ruleY, static_cast<int16_t>(layout_.width - 120), 2, Ink::kBlack);
+
+    char line[96];
+    const uint32_t total = doc_.count();
+    const uint32_t pct = total != 0u ? (index_ * 100u) / total : 0u;
+    snprintf(line, sizeof(line), "%s  -  %u%%", name_, static_cast<unsigned>(pct));
+    int16_t w = s.textWidth(Font::kStatus, line);
+    s.text(Font::kStatus, static_cast<int16_t>((layout_.width - w) / 2),
+           static_cast<int16_t>(ruleY + 44), line);
+
+    const char* wake = "off  -  hold power to wake";
+    w = s.textWidth(Font::kStatus, wake);
+    s.text(Font::kStatus, static_cast<int16_t>((layout_.width - w) / 2),
+           static_cast<int16_t>(ruleY + 88), wake);
+}
+
+void Reader::renderSleep() {
+    const SleepPainter painter(*this);
+    surface_.renderFull(painter);
+    partialsSinceFlush_ = 0;
 }
 
 void Reader::renderFull() {

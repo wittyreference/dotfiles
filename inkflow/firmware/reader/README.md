@@ -15,13 +15,15 @@ caps — it is the path a whole book takes.
 
 ## Controls
 
-| Button | Action |
-|---|---|
-| **Confirm** | Play / pause |
-| **Left** | Rewind to the start of the sentence |
-| **Up / Down** | Speed up / down, 30 WPM per press |
-| **Right** | WiFi transfer mode — serve the upload page over the device's own AP |
-| **Back** | Redraw (also clears ghosting); leaves transfer mode |
+Every control, what it does in each mode, and what the firmware deliberately does not
+implement: **[`../../docs/CONTROLS.md`](../../docs/CONTROLS.md)**. That document is read off
+`src/main.cpp` rather than remembered, and it is the only place the bindings are written
+down — a second table here would be a second thing to keep in step, and the one that drifted
+would be the one someone read.
+
+The short version: **Confirm** plays and pauses, **Left** rewinds by a sentence, **Up** and
+**Down** change speed, **Right** goes in and out of WiFi transfer mode, **Back** redraws,
+and **Power** held for about a second switches the device off.
 
 **Rewind is the feature, not a convenience.** Suppressing the backward glance is the one
 thing RSVP inherently does to a reader, and it measurably costs comprehension. Pressing
