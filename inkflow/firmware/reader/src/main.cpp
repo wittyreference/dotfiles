@@ -40,6 +40,9 @@ static reader::Reader g_reader(g_doc, g_surface, reader::kLandscape);
 static Preferences g_prefs;
 static Transfer g_transfer;
 static bool g_transferMode = false;
+/// Whether the card mounted at boot. A missing card is a normal state: the reader falls
+/// back to a built-in passage, and the diagnostics simply go unwritten.
+static bool g_sdReady = false;
 static char g_docName[64] = "built-in";
 
 /// Shown when the SD card has nothing to read, so the device is never a blank screen.
@@ -206,6 +209,32 @@ static void savePosition() {
     g_prefs.putUInt("pos", g_reader.index());
 }
 
+/// Appends one reading to `/battery.csv` on the card.
+///
+/// Opened and closed per line rather than held open: the measurement that matters is
+/// taken on battery, and a run on battery ends when the cell does. A file held open
+/// across that loses whatever was buffered, which is the tail of the curve -- the part
+/// worth having. One open per 16 tokens is roughly one per ten seconds, against a card
+/// that is already being read from continuously.
+///
+/// Silent on failure. A missing card is a normal state for this device, and a reader
+/// mid-sentence should not be interrupted to be told that the diagnostics are not being
+/// written.
+static void logBattery(uint32_t index, uint32_t millivolts) {
+    if (!g_sdReady) {
+        return;
+    }
+    File f = SD.open("/battery.csv", FILE_APPEND);
+    if (!f) {
+        return;
+    }
+    // millis() rather than a wall clock: the device has no RTC, and elapsed time since
+    // boot is what a discharge curve is plotted against anyway.
+    f.printf("%lu,%u,%u\n", static_cast<unsigned long>(millis()),
+             static_cast<unsigned>(index), static_cast<unsigned>(millivolts));
+    f.close();
+}
+
 /// Switches the device off. E-paper holds its image with no power, so the last thing drawn
 /// is what the reader sees while it is off -- which is why this draws a screen of its own
 /// rather than leaving three words sitting there looking like a device still waiting.
@@ -270,7 +299,8 @@ void setup() {
     display.setRotation(kRotation);
     Serial.println("inkflow: display ok");
 
-    Serial.printf("inkflow: sd %s\n", SD.begin(SD_SPI_CS, SPI, kSpiHz) ? "ok" : "absent");
+    g_sdReady = SD.begin(SD_SPI_CS, SPI, kSpiHz);
+    Serial.printf("inkflow: sd %s\n", g_sdReady ? "ok" : "absent");
     loadDocument();
     Serial.println("inkflow: document loaded");
 
@@ -317,6 +347,12 @@ void loop() {
         if (g_transferMode) {
             g_transfer.end();
             g_transferMode = false;
+            // Transfer mode closed the document so the upload server could have the card
+            // to itself. Reopen before sleeping: the sleep screen states how far through
+            // the book the reader got, and a closed document makes that 0% regardless of
+            // where they actually are. Same call the Right-to-exit path makes, for the
+            // same reason.
+            loadDocument();
         }
         enterDeepSleep();
     }
@@ -370,6 +406,14 @@ void loop() {
     } else if (g_input.wasPressed(kBtnRight)) {
         g_transferMode = true;
         g_reader.setPlaying(false);
+        // Let go of the card before the upload server touches it. SdSource holds the
+        // document's file open for the document's life -- deliberately, because an
+        // open-seek-close around every 256-token block would cost more than it saves --
+        // and streamUpload removes the target before writing it. Re-uploading the book
+        // you are currently reading would therefore unlink a file with a live read handle
+        // on it and hand its clusters to the new write. The position is already in NVS,
+        // and leaving transfer mode calls loadDocument, which reopens.
+        g_doc.close();
         g_transfer.begin();
         renderTransfer();
     } else if (g_input.wasPressed(kBtnBack)) {
@@ -397,13 +441,19 @@ void loop() {
         lastSaved = index;
         savePosition();
 
-        // A battery column in the serial log, on the cadence that already exists. Nothing
-        // on a host defends this line -- there is no battery to read there -- so it stays
-        // a print rather than logic. On USB the reading is pinned and means nothing; on
-        // the cell it is the only measurement of the one risk still open, and it costs a
-        // printf against a 542ms refresh.
+        // A battery column, on the cadence that already exists. Nothing on a host defends
+        // this -- there is no battery to read there -- so it stays a print rather than
+        // logic, and costs a line against a 542ms refresh.
+        //
+        // It goes to the card as well as the serial port, because the two channels answer
+        // different questions and only one of them is available when it matters. USB is
+        // also the charger: measured over serial, the cell reads *rising*, which is the
+        // opposite of the number this project needs. The discharge curve only exists
+        // while the cable is out, and that is exactly when nothing is listening.
+        const uint32_t mv = analogReadMilliVolts(kBatteryAdcPin);
         Serial.printf("inkflow: at %u, %u mV\n", static_cast<unsigned>(index),
-                      static_cast<unsigned>(analogReadMilliVolts(kBatteryAdcPin)));
+                      static_cast<unsigned>(mv));
+        logBattery(index, mv);
     }
 
     // Refresh time counts against the hold: the panel already spent it showing the word.

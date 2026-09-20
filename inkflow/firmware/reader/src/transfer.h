@@ -39,6 +39,7 @@ public:
         server_->on("/", HTTP_GET, [this]() { serveIndex(); });
         server_->on("/list", HTTP_GET, [this]() { serveList(); });
         server_->on("/delete", HTTP_GET, [this]() { handleDelete(); });
+        server_->on("/get", HTTP_GET, [this]() { serveFile(); });
         // Two handlers: the second fires repeatedly as the body streams in, the first
         // once at the end. A 1.4 MB book cannot be buffered whole, so it is written to
         // the card as it arrives.
@@ -46,6 +47,11 @@ public:
             "/upload", HTTP_POST, [this]() { finishUpload(); }, [this]() { streamUpload(); });
         server_->begin();
         running_ = true;
+        // The transfer path is the least observable thing this firmware does: it runs
+        // while the reader is looking at a static screen, and until these lines existed
+        // a failed upload produced no record anywhere. Serial is up on our builds, so
+        // there is no reason for it to be silent.
+        Serial.printf("inkflow: ap %s up at %s\n", kApSsid, ip_.toString().c_str());
     }
 
     void end() {
@@ -56,11 +62,29 @@ public:
         WiFi.softAPdisconnect(true);
         WiFi.mode(WIFI_OFF);
         running_ = false;
+        Serial.println("inkflow: ap down");
     }
 
     void poll() {
         if (running_) {
             server_->handleClient();
+
+            // A client joining or leaving redraws the screen. Without this the connected
+            // count is drawn once, when transfer mode is entered, and stays at zero for
+            // as long as the reader looks at it -- which makes the one number that could
+            // tell you whether your phone actually joined the access point useless for
+            // exactly that. Phones are quietly reluctant to stay on a network with no
+            // internet, so "did it join" is the first question a failed transfer raises.
+            //
+            // Cheap because it is edge-triggered: a full refresh costs 1958ms, but the
+            // station count changes when someone walks up to the device, not per loop.
+            const uint8_t now = WiFi.softAPgetStationNum();
+            if (now != stations_) {
+                Serial.printf("inkflow: ap clients %u -> %u\n",
+                              static_cast<unsigned>(stations_), static_cast<unsigned>(now));
+                stations_ = now;
+                dirty_ = true;
+            }
         }
     }
 
@@ -100,9 +124,13 @@ private:
         if (root) {
             for (File f = root.openNextFile(); f; f = root.openNextFile()) {
                 if (!f.isDirectory()) {
-                    out += "<li>";
+                    // Linked, so a phone can read a log off the card without anyone
+                    // opening the device to find the card.
+                    out += "<li><a href='/get?f=";
                     out += f.name();
-                    out += " &mdash; ";
+                    out += "'>";
+                    out += f.name();
+                    out += "</a> &mdash; ";
                     out += String(f.size() / 1024);
                     out += " KB</li>";
                 }
@@ -112,6 +140,38 @@ private:
         }
         out += "</ul>";
         server_->send(200, "text/html", out);
+    }
+
+    /// Hands a file back off the card.
+    ///
+    /// The upload path exists so books can reach the device without removing the card.
+    /// This is the same argument in the other direction: the reader writes diagnostics
+    /// there -- `/battery.csv` above all, which is the only record of a run made with the
+    /// cable out -- and without this the only way to read them is to open the device and
+    /// find a card reader.
+    void serveFile() {
+        if (!server_->hasArg("f")) {
+            server_->send(400, "text/plain", "missing f");
+            return;
+        }
+        char path[kMaxCardPath];
+        if (!safeCardPath(server_->arg("f").c_str(), path, sizeof(path))) {
+            server_->send(400, "text/plain", "not a filename");
+            return;
+        }
+        File f = SD.open(path, FILE_READ);
+        if (!f || f.isDirectory()) {
+            if (f) {
+                f.close();
+            }
+            server_->send(404, "text/plain", "no such file");
+            return;
+        }
+        // text/plain rather than a guess at the type: everything worth pulling off this
+        // device by hand is a log or a sidecar, and a browser that renders it beats one
+        // that downloads it to somewhere a phone will not show you.
+        server_->streamFile(f, "text/plain");
+        f.close();
     }
 
     void handleDelete() {
@@ -135,9 +195,12 @@ private:
             lastFailure_ = nullptr;
             strncpy(lastName_, up.filename.c_str(), sizeof(lastName_) - 1);
 
+            Serial.printf("inkflow: upload start %s\n", lastName_);
+
             char path[kMaxCardPath];
             if (!safeCardPath(up.filename.c_str(), path, sizeof(path))) {
                 lastFailure_ = "That is not a filename this device will write to the card.";
+                Serial.println("inkflow: upload refused, not a filename");
                 return;
             }
             // Overwrite rather than append: re-uploading a corrected file should replace
@@ -146,6 +209,7 @@ private:
             file_ = SD.open(path, FILE_WRITE);
             if (!file_) {
                 lastFailure_ = "The card would not open the file for writing.";
+                Serial.printf("inkflow: upload failed, card would not open %s\n", path);
             }
         } else if (up.status == UPLOAD_FILE_WRITE) {
             if (file_) {
@@ -155,12 +219,17 @@ private:
                 // vanish and the page still congratulates the reader.
                 if (wrote != up.currentSize && lastFailure_ == nullptr) {
                     lastFailure_ = "The card stopped accepting data part-way through.";
+                    Serial.printf("inkflow: upload short write at %u bytes\n",
+                                  static_cast<unsigned>(lastBytes_));
                 }
             }
         } else if (up.status == UPLOAD_FILE_END) {
             if (file_) {
                 file_.close();
             }
+            Serial.printf("inkflow: upload end %s, %u bytes, %s\n", lastName_,
+                          static_cast<unsigned>(lastBytes_),
+                          lastFailure_ == nullptr ? "ok" : lastFailure_);
             dirty_ = true;
         }
     }
@@ -198,6 +267,8 @@ private:
     IPAddress ip_;
     bool running_ = false;
     bool dirty_ = false;
+    /// Last observed station count, so a change can be detected rather than polled for.
+    uint8_t stations_ = 0;
     char lastName_[64] = {0};
     size_t lastBytes_ = 0;
     /// Null when the last upload succeeded; otherwise what to tell the reader.
