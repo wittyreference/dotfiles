@@ -42,6 +42,16 @@ private:
     uint32_t until_;
 };
 
+/// The panel's modelled clock, which is the only clock in a simulated device.
+class PanelClock : public reader::Clock {
+public:
+    explicit PanelClock(const sim::Panel& panel) : panel_(panel) {}
+    uint32_t nowMs() override { return static_cast<uint32_t>(panel_.elapsedMs()); }
+
+private:
+    const sim::Panel& panel_;
+};
+
 rsvp::TimingConfig timingAt(uint16_t wpm) {
     rsvp::TimingConfig t{};
     t.wpm = wpm;
@@ -56,7 +66,8 @@ bool tapIsNoticed(uint32_t tapAtMs, uint32_t tapForMs) {
 
     sim::Panel panel(reader::kLandscape);
     TapSource source(panel, kButton, tapAtMs, tapForMs);
-    reader::ButtonLatch latch(source);
+    PanelClock clock(panel);
+    reader::ButtonLatch latch(source, clock);
     panel.setServicer(&latch);
 
     reader::Document doc;
@@ -111,7 +122,8 @@ TEST_CASE("a press is acted on once, however many samples saw it") {
     constexpr uint8_t kButton = 1u;
     sim::Panel panel(reader::kLandscape);
     TapSource source(panel, kButton, 0u, 5000u);
-    reader::ButtonLatch latch(source);
+    PanelClock clock(panel);
+    reader::ButtonLatch latch(source, clock);
     panel.setServicer(&latch);
 
     reader::Document doc;
@@ -133,4 +145,62 @@ TEST_CASE("a press is acted on once, however many samples saw it") {
     CHECK(seen == 1);
     // And it is still held, which is how a hold gesture is told from a tap.
     CHECK(latch.held(kButton));
+}
+
+// Power is a hold, not a tap, and until now nothing tested holds at all. The device
+// reported the press and then did nothing with it, because hold duration was measured
+// between loop turns 650ms apart while the panel was blocking in between -- so a
+// deliberate one-second hold could be measured as anything at all.
+TEST_CASE("a hold is measured from inside the refresh, not between turns") {
+    constexpr uint8_t kPower = 6u;
+
+    auto holdIsSeen = [](uint32_t startMs, uint32_t forMs) {
+        sim::Panel panel(reader::kLandscape);
+        TapSource source(panel, kPower, startMs, forMs);
+        PanelClock clock(panel);
+        reader::ButtonLatch latch(source, clock);
+        panel.setServicer(&latch);
+
+        reader::Document doc;
+        doc.useMemory(kProse, std::strlen(kProse));
+        reader::Reader r(doc, panel, reader::kLandscape);
+        r.setTiming(timingAt(330));
+        r.setPlaying(true);
+        r.renderFull();
+
+        uint32_t longest = 0u;
+        reader::Frame frame{};
+        while (panel.elapsedMs() < startMs + forMs + 4000u) {
+            const uint32_t held = latch.heldFor(kPower);
+            if (held > longest) {
+                longest = held;
+            }
+            latch.take();
+            if (!r.step(frame)) {
+                break;
+            }
+        }
+        const uint32_t held = latch.heldFor(kPower);
+        return held > longest ? held : longest;
+    };
+
+    SUBCASE("a deliberate hold is recognised as one") {
+        // What a reader does when they mean to switch the device off. It must not be
+        // possible for this to read as a tap.
+        for (uint32_t at = 700u; at < 1800u; at += 61u) {
+            CAPTURE(at);
+            const uint32_t measured = holdIsSeen(at, 1200u);
+            CHECK(measured >= 1000u);
+        }
+    }
+
+    SUBCASE("a tap is not mistaken for a hold") {
+        // The other direction matters more: switching off is the one action a reader
+        // cannot undo by pressing again, and a brush against a pocket must not do it.
+        for (uint32_t at = 700u; at < 1800u; at += 61u) {
+            CAPTURE(at);
+            const uint32_t measured = holdIsSeen(at, 120u);
+            CHECK(measured < 1000u);
+        }
+    }
 }

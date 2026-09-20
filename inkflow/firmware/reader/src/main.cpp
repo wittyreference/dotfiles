@@ -55,8 +55,17 @@ public:
 };
 
 static LadderButtons g_buttons;
-/// Catches presses that land while the panel is working, which is most of them.
-static reader::ButtonLatch g_latch(g_buttons);
+
+/// millis(), which is the only clock this device has.
+class ArduinoClock : public reader::Clock {
+public:
+    uint32_t nowMs() override { return millis(); }
+};
+
+static ArduinoClock g_clock;
+/// Catches presses that land while the panel is working, which is most of them, and
+/// times holds from the same samples.
+static reader::ButtonLatch g_latch(g_buttons, g_clock);
 
 static Preferences g_prefs;
 static Transfer g_transfer;
@@ -497,10 +506,34 @@ void loop() {
     static uint32_t lastSaved = 0;
     g_input.update();
 
-    // Sample once more here and drain. Everything the latch caught during the last
-    // refresh -- where the reader spends about three quarters of every cycle -- arrives
-    // in this one word, and is acted on exactly once however many samples saw it.
+    // Sample once more here. Everything the latch caught during the last refresh --
+    // where the reader spends about three quarters of every cycle -- is waiting in it.
     g_latch.service();
+
+    // Power is handled ahead of the mode branch so it works while reading and while in
+    // transfer mode alike. A reader holding the power button means it, wherever they are.
+    //
+    // Timed by the latch rather than by InputManager's own tracking: that samples once a
+    // turn, and a turn is 650ms of which the panel is blocking for 500. A deliberate
+    // one-second hold measured between two such samples could come out as anything, which
+    // is exactly what happened the first time anyone tried to switch the device off.
+    if (g_latch.heldFor(kBtnPower) >= kPowerHoldMs) {
+        g_pickerMode = false;
+        if (g_transferMode) {
+            g_transfer.end();
+            g_transferMode = false;
+            // Transfer mode closed the document so the upload server could have the card
+            // to itself. Reopen before sleeping: the sleep screen states how far through
+            // the book the reader got, and a closed document makes that 0% regardless of
+            // where they actually are. Same call the Right-to-exit path makes, for the
+            // same reason.
+            loadDocument();
+        }
+        enterDeepSleep();
+    }
+
+    // Drained after the power check, because take() clears the hold durations along with
+    // the presses. Each press is acted on exactly once however many samples saw it.
     const uint16_t pressed = g_latch.take();
     auto tapped = [pressed](uint8_t button) {
         return (pressed & static_cast<uint16_t>(1u << button)) != 0u;
@@ -516,22 +549,6 @@ void loop() {
         }
     }
 
-    // Power is handled ahead of the mode branch so it works while reading and while in
-    // transfer mode alike. A reader holding the power button means it, wherever they are.
-    if (g_input.wasReleased(kBtnPower) && g_input.getHeldTime() > kPowerHoldMs) {
-        g_pickerMode = false;
-        if (g_transferMode) {
-            g_transfer.end();
-            g_transferMode = false;
-            // Transfer mode closed the document so the upload server could have the card
-            // to itself. Reopen before sleeping: the sleep screen states how far through
-            // the book the reader got, and a closed document makes that 0% regardless of
-            // where they actually are. Same call the Right-to-exit path makes, for the
-            // same reason.
-            loadDocument();
-        }
-        enterDeepSleep();
-    }
 
     if (g_pickerMode) {
         // The same two rockers, doing the same shape of thing: the upper one moves, the
