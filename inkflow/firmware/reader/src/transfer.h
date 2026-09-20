@@ -152,7 +152,7 @@ private:
         body += lastName_;
         body += " &mdash; ";
         body += String(lastBytes_ / 1024);
-        body += " KB</p><p>Press <b>Back</b> on the reader to leave transfer mode and "
+        body += " KB</p><p>Press <b>Right</b> on the reader to leave transfer mode and "
                 "open it.</p><p><a href=/>Upload another</a></p>";
         server_->send(200, "text/html", body);
     }

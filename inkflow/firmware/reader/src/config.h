@@ -49,6 +49,17 @@ static constexpr uint8_t kRotation = 0;  // 800x480 landscape
 
 // WiFi transfer. The radio is the largest single power draw on a 650 mAh cell, so it
 // runs only while the reader is explicitly in transfer mode, never in the background.
+// Power is a firmware responsibility on this device: there is no latch, and "off" is
+// ESP32 deep sleep with the power button armed as the wake source. A device that never
+// sleeps runs until its cell is flat, which is a plausible contributor to the panel
+// trouble recorded in hardware-notes/bringup-20260918.md.
+//
+// One second, matching the community sample firmware's documented behaviour, so the
+// device behaves the way an X4 owner already expects. A deliberate hold rather than a tap
+// because this button is the one thing that cannot be undone by pressing it again, and a
+// reader should not lose their page to a brush against a pocket.
+static constexpr uint32_t kPowerHoldMs = 1000u;
+
 static constexpr char kApSsid[] = "inkflow";
 static constexpr char kApPassword[] = "inkflow-reader";  // WPA2 needs 8+ characters
 static constexpr uint16_t kHttpPort = 80;
