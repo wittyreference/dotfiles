@@ -18,6 +18,7 @@
 #include "sd_source.h"
 #include "transfer.h"
 #include "reader/document.hpp"
+#include "reader/picker.hpp"
 #include "reader/layout.hpp"
 #include "reader/reader.hpp"
 #include "rsvp/timing.hpp"
@@ -36,6 +37,9 @@ static GxEpd2Surface<Display> g_surface(display);
 static SdSource g_source;
 static reader::Document g_doc;
 static reader::Reader g_reader(g_doc, g_surface, reader::kLandscape);
+/// The book list. Populated only when the reader asks for it, because the walk that
+/// fills it is the one that once took 108 seconds in silence.
+static reader::Picker g_picker(g_surface, reader::kLandscape);
 
 static Preferences g_prefs;
 static Transfer g_transfer;
@@ -91,6 +95,55 @@ static constexpr uint32_t kScanMaxEntries = 4000u;
 /// .rsvp is preferred because it streams: a real book is far past what RAM holds, and
 /// the sidecar exists so the device can seek into a flat token array rather than build
 /// one. A .txt is still accepted for short pieces and is tokenised in memory.
+/// Fills the picker with everything on the card a reader could open.
+///
+/// The same walk `loadDocument` does, and bounded the same way, but keeping every match
+/// rather than stopping at the first sidecar. Separate rather than folded together
+/// because they answer different questions -- "what do I open now" wants to stop early,
+/// "what could I open" cannot -- and because the reader only pays for this walk when it
+/// asks for the list.
+static void listDocuments() {
+    g_picker.clear();
+
+    File root = SD.open("/");
+    if (!root) {
+        return;
+    }
+    uint32_t scanned = 0;
+    uint32_t reportedAt = millis();
+    for (File f = root.openNextFile(); f; f = root.openNextFile()) {
+        const char* name = f.name();
+        const size_t n = strlen(name);
+        const bool dir = f.isDirectory();
+        const bool rsvp = n > 5 && strcasecmp(name + n - 5, ".rsvp") == 0;
+        const bool txt = n > 4 && strcasecmp(name + n - 4, ".txt") == 0;
+        if (!dir && (rsvp || txt)) {
+            // Without its leading slash: the name is what the reader reads, and the
+            // picker hands it back to be opened with one put on again.
+            if (!g_picker.add(name[0] == '/' ? name + 1 : name)) {
+                Serial.println("inkflow: picker full, later books not listed");
+                f.close();
+                break;
+            }
+        }
+        f.close();
+        if (++scanned >= kScanMaxEntries) {
+            Serial.printf("inkflow: sd scan stopped at %u entries\n",
+                          static_cast<unsigned>(scanned));
+            break;
+        }
+        const uint32_t now = millis();
+        if (now - reportedAt >= kScanReportMs) {
+            reportedAt = now;
+            Serial.printf("inkflow: scanning sd, %u entries\n",
+                          static_cast<unsigned>(scanned));
+        }
+    }
+    root.close();
+    Serial.printf("inkflow: %u books on the card\n",
+                  static_cast<unsigned>(g_picker.count()));
+}
+
 static void loadDocument() {
     g_doc.close();
     g_source.close();
