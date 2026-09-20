@@ -12,3 +12,9 @@ cmake-build-*/
 # Device flash dumps: 16 MB, device-specific, never committed
 hardware-notes/*.bin
 hardware-notes/*.bin.sha256
+
+# Editor swap and backup files
+*.swp
+*.swo
+*~
+.*.swp
