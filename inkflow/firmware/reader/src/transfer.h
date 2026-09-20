@@ -7,6 +7,7 @@
 #include <WebServer.h>
 #include <WiFi.h>
 
+#include "card_path.h"
 #include "config.h"
 
 /// Runs an access point and a small upload server while the reader is in transfer mode.
@@ -118,7 +119,11 @@ private:
             server_->send(400, "text/plain", "missing f");
             return;
         }
-        String path = "/" + server_->arg("f");
+        char path[kMaxCardPath];
+        if (!safeCardPath(server_->arg("f").c_str(), path, sizeof(path))) {
+            server_->send(400, "text/plain", "not a filename");
+            return;
+        }
         server_->send(200, "text/plain", SD.remove(path) ? "deleted" : "failed");
         dirty_ = true;
     }
@@ -126,16 +131,31 @@ private:
     void streamUpload() {
         HTTPUpload& up = server_->upload();
         if (up.status == UPLOAD_FILE_START) {
-            String path = "/" + up.filename;
+            lastBytes_ = 0;
+            lastFailure_ = nullptr;
+            strncpy(lastName_, up.filename.c_str(), sizeof(lastName_) - 1);
+
+            char path[kMaxCardPath];
+            if (!safeCardPath(up.filename.c_str(), path, sizeof(path))) {
+                lastFailure_ = "That is not a filename this device will write to the card.";
+                return;
+            }
             // Overwrite rather than append: re-uploading a corrected file should replace
             // it, not silently double it.
             SD.remove(path);
             file_ = SD.open(path, FILE_WRITE);
-            lastBytes_ = 0;
-            strncpy(lastName_, up.filename.c_str(), sizeof(lastName_) - 1);
+            if (!file_) {
+                lastFailure_ = "The card would not open the file for writing.";
+            }
         } else if (up.status == UPLOAD_FILE_WRITE) {
             if (file_) {
-                lastBytes_ += file_.write(up.buf, up.currentSize);
+                const size_t wrote = file_.write(up.buf, up.currentSize);
+                lastBytes_ += wrote;
+                // A short write is the card filling up or failing. Without this the bytes
+                // vanish and the page still congratulates the reader.
+                if (wrote != up.currentSize && lastFailure_ == nullptr) {
+                    lastFailure_ = "The card stopped accepting data part-way through.";
+                }
             }
         } else if (up.status == UPLOAD_FILE_END) {
             if (file_) {
@@ -145,10 +165,26 @@ private:
         }
     }
 
+    /// Reports what actually happened, which is not always success.
+    ///
+    /// This used to render "Uploaded" unconditionally. If the card never opened, every
+    /// write was silently dropped and the reader was told their book had arrived, at
+    /// 0 KB. On a transfer path with no test coverage and one shot at a reader's trust,
+    /// a page that lies about the outcome is worse than no page.
     void finishUpload() {
         String body = "<!doctype html><meta name=viewport content='width=device-width'>"
                       "<style>body{font:16px system-ui;margin:2rem auto;max-width:34rem;"
-                      "padding:0 1rem}</style><h1>Uploaded</h1><p>";
+                      "padding:0 1rem}</style>";
+        if (lastFailure_ != nullptr) {
+            body += "<h1>Upload failed</h1><p>";
+            body += lastName_;
+            body += "</p><p>";
+            body += lastFailure_;
+            body += "</p><p><a href=/>Try again</a></p>";
+            server_->send(500, "text/html", body);
+            return;
+        }
+        body += "<h1>Uploaded</h1><p>";
         body += lastName_;
         body += " &mdash; ";
         body += String(lastBytes_ / 1024);
@@ -164,4 +200,6 @@ private:
     bool dirty_ = false;
     char lastName_[64] = {0};
     size_t lastBytes_ = 0;
+    /// Null when the last upload succeeded; otherwise what to tell the reader.
+    const char* lastFailure_ = nullptr;
 };

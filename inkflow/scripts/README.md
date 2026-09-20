@@ -115,6 +115,7 @@ hour here.
 | `01-backup.sh` | Golden 16 MB flash dump plus checksum and manifest | **No** |
 | `02-flash.sh` | Writes an application image to app0 at `0x10000`, then verifies | **Yes**, app0 only |
 | `03-restore.sh` | Writes a checksum-verified golden image back over the whole flash | **Yes**, all of it |
+| `04-read-session.sh` | Drives one reading session: build, flash, transfer, watch, publish | **Yes**, via `02-flash.sh` |
 
 Run them in order. `00-probe.sh` first is not ceremony: it tells you whether the unit
 is locked, and a locked unit must not be flashed with anything before you have read
@@ -140,7 +141,36 @@ a probe, a backup and an eFuse read can run back-to-back without touching the de
 between. If you run esptool by hand, pass it yourself or budget a power-cycle.
 
 Custom firmware built from `firmware/reader` keeps USB up after boot, so once you have
-flashed your own image the power-cycle dance stops.
+flashed your own image the power-cycle dance stops. `04-read-session.sh flash` relies on
+that: it ends on `--after hard-reset`, which boots the freshly written application with
+USB surviving, so a flash-and-watch loop needs no hands on the device at all.
+
+**Never hold the serial port open across a flash.** esptool and a reader on the same port
+produce `device reports readiness to read but returned no data`, and the device comes back
+up in download mode (`boot:0x7 DOWNLOAD`) rather than running the application. It looks
+exactly like a failed flash and is not one. `04-read-session.sh flash` checks for this and
+refuses rather than letting you find out.
+
+## A reading session
+
+`04-read-session.sh` is the whole device session behind five subcommands:
+
+```sh
+./scripts/04-read-session.sh build      # pio run, print size and sha256
+./scripts/04-read-session.sh flash      # write app0, then boot it
+./scripts/04-read-session.sh watch      # capture serial to hardware-notes/session-<ts>.log
+./scripts/04-read-session.sh transfer   # the phone-sized transfer instructions
+./scripts/04-read-session.sh publish    # push-results.sh
+```
+
+Run `watch` in its own window and leave it there for the whole read: it timestamps every
+line, so pacing, refresh counts and the battery reading land in one timeline. Stop it
+before flashing again.
+
+`transfer` prints instructions rather than uploading anything, deliberately. This Mac's
+VPN pins `192.168.4.1` into a tunnel, so it cannot reach the device's access point at all.
+A phone sidesteps that entirely and needs no privileges, which beats editing a VPN's
+routing table for a file copy.
 
 ## What comes back
 
