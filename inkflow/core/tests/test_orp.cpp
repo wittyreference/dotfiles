@@ -79,3 +79,32 @@ TEST_CASE("tokens with no letters pivot on the first character") {
     CHECK(orpOf("...") == 0);
     CHECK(orpOf("42") == 1);  // digits are word characters: a numeral has a shape
 }
+
+TEST_CASE("a null token pivots on zero rather than dereferencing") {
+    // The helper above cannot reach this branch -- std::string::data() is never
+    // null -- but a caller holding a failed read can, so it is tested directly.
+    CHECK(rsvp::computeOrp(nullptr, 0u) == 0);
+}
+
+TEST_CASE("a pivot past the width of Token::orp is clamped, not wrapped") {
+    // Token::orp is one byte. A token opening with hundreds of punctuation marks
+    // is not prose, but the renderer indexes with whatever it is handed, so the
+    // pivot has to stay a valid index instead of wrapping round to a small one.
+    const std::string deepPadding(300u, '(');
+    CHECK(orpOf(deepPadding + "hello") == 255);
+
+    // Just below the clamp the real index still comes through untouched.
+    const std::string shallowPadding(250u, '(');
+    CHECK(orpOf(shallowPadding + "hello") == 251);
+}
+
+TEST_CASE("leading non-ASCII punctuation is counted into the word core") {
+    // The documented cost of treating every non-ASCII byte as a letter: a
+    // typographic quote joins the core instead of being skipped like its ASCII
+    // twin, so the pivot lands a character earlier in the word than it should.
+    const std::string curly = "\xE2\x80\x9C" "reader";  // U+201C, three bytes
+
+    CHECK(orpOf("reader") == 2);
+    CHECK(orpOf("\"reader") == 3);  // ASCII quote is skipped, pivot keeps its letter
+    CHECK(orpOf(curly) == 2);       // curly quote is not, so the pivot slips left
+}

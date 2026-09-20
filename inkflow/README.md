@@ -4,16 +4,19 @@ An RSVP reader for e-ink devices, targeting the [Xteink X4](docs/PLATFORM-MATRIX
 
 RSVP — rapid serial visual presentation — displays text one word or short chunk at a time at a fixed screen position. Your eye stops moving: no line tracking, no saccades, no losing your place. For some readers, and specifically for readers with ADHD, removing the eye-movement and place-keeping overhead is the difference between reading and re-reading the same paragraph six times.
 
-**Status: early. The engine works and is tested; nothing runs on hardware yet.** See [Honest status](#honest-status) — that section is the contract, and it will not overstate what exists.
+**Status: the engine and the reader are built and tested; the reader has never displayed a book.** See [Honest status](#honest-status) — that section is the contract, and it will not overstate what exists.
 
 ## What's here
 
 | Component | What it is | State |
 |---|---|---|
-| `core/` | **`rsvp-core`** — the portable engine: tokenizer, pivot calculation, timing model, playback state machine, `.rsvp` container. C++17, no dependencies, no dynamic allocation, no I/O | Done and tested |
-| `tools/rsvp-mk/` | Host-side converter: text / markdown → a compact `.rsvp` sidecar | Working for TXT and Markdown. EPUB, HTML, and PDF not started |
-| `bench/eink-bench/` | On-device harness measuring real SSD1677 refresh latency and power draw | Not started |
-| `sim/` | Desktop simulator for tuning speed and chunking without hardware | Not started |
+| `core/` | **`rsvp-core`** — the portable engine: tokenizer, pivot calculation, timing model, chunker, playback state machine, `.rsvp` container. C++17, no dependencies, no dynamic allocation, no I/O | Done and tested |
+| `reader/` | **`rsvp-reader`** — the reading loop: chunk assembly, pacing, refresh policy, rewind. Draws through an injected surface and reads through an injected byte source, so the device and the simulator run one copy | Done and tested |
+| `firmware/reader/` | The reader for the Xteink X4. Streams a sidecar from SD, WiFi transfer, resume | Compiles and links. **Never flashed** |
+| `tools/rsvp-mk/` | Host-side converter: text / markdown → a compact `.rsvp` sidecar | Working for TXT and Markdown. HTML and PDF not started |
+| `tools/epub-to-text/` | EPUB → text, spine order preserved | Working, as a separate step before `rsvp-mk` |
+| `bench/eink-bench/` | On-device harness measuring real SSD1677 refresh latency | Run on hardware. Results in `docs/REFRESH-MEASUREMENTS.md` |
+| `sim/` | Desktop simulator. Runs the shipped reading loop against a modelled panel, and fails the build on a layout fault | Working |
 | `docs/PLATFORM-MATRIX.md` | Sourced capability matrix for the X4 and its firmware ecosystem | Done |
 | `docs/FEATURE-SURVEY.md` | Feature survey of open-source RSVP readers and the X4 ecosystem, with the per-project license boundary and what the comprehension research says | Done |
 
@@ -58,31 +61,58 @@ That finding also makes the hardware question easier: 250–350 WPM means 171–
 
 ## Building
 
-Needs CMake ≥ 3.16 and a C++17 compiler. No network access required — the test framework is vendored.
+Needs CMake ≥ 3.16, a C++17 compiler and zlib. No network access required — the test framework is vendored.
 
 ```sh
 cmake -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build -j
-./build/core/rsvp_core_tests
+ctest --test-dir build
 ```
 
 The build also produces `rsvp_core_freestanding`, which compiles the engine with `-fno-exceptions -fno-rtti`. That target exists so the "usable on bare metal" claim is enforced by the build rather than asserted in a comment — if anything in the engine starts depending on exceptions, RTTI, or the heap, this breaks at build time instead of at flash time.
+
+To watch a reading session rather than read about one:
+
+```sh
+./build/tools/rsvp-mk/rsvp_mk docs/FEATURE-SURVEY.md -o /tmp/book.rsvp
+./build/sim/sim /tmp/book.rsvp /tmp 40 --no-png --gif /tmp/reading.gif
+```
+
+Each frame's delay is that chunk's own hold time, so it plays at the pace the panel would.
+
+The device firmware builds with PlatformIO, not CMake:
+
+```sh
+cd firmware/reader && pio run
+```
+
+## The simulator is a test, not a viewer
+
+It runs the shipped reading loop — the same `reader/` the firmware links — against a panel model built from the measured refresh numbers. It exits non-zero when a chunk cannot be placed, which turns a class of fault that is invisible in code review and awkward to describe over chat into a build failure.
+
+This is worth stating plainly because it was not always true. The simulator used to reimplement the reader's screen rather than run its code, and a fault lived in that gap: the firmware took the *maximum* of per-token hold times, each of which had already been clamped up to the panel's refresh floor, so the floor won every time and every boundary pause the timing model computed was discarded. Requesting 200 WPM and requesting 400 both delivered about 300. The simulator was green throughout, because it was running different code.
+
+A simulator that stays green while the firmware is broken is worse than no simulator, because it looks like coverage.
 
 ## Honest status
 
 What is true today:
 
-- The engine is complete and tested: tokenizer with boundary classification, pivot calculation, timing model, playback state machine (pause, rewind-by-sentence, fingerprinted resume points), and the `.rsvp` container. **84 test cases, 386 assertions, plus 22 end-to-end CLI checks — all green.**
+- The engine is complete and tested: tokenizer with boundary classification, pivot calculation, timing model, chunker, playback state machine (pause, rewind-by-sentence, fingerprinted resume points), and the `.rsvp` container. **166 test cases, 1047 assertions, plus 26 end-to-end CLI checks, 10 EPUB tests and a 5-check pipeline test — all green.**
+- The reading loop is shared. The firmware and the simulator link the same `reader/`, so what the simulator clears is what the device runs. It was not always so, and the gap hid a real fault — see below.
+- The simulator runs that loop against a panel model calibrated to the measured refresh numbers, streams a real 1.4 MB sidecar through the same code path the device uses, and **fails the build** on a layout fault. It can write a session as an animated GIF at the true reading pace.
 - `rsvp-mk` converts text and Markdown to a `.rsvp` sidecar, and a test asserts the round trip plays back the original words in order through the real file format.
 - The engine compiles clean under `-Wall -Wextra -Wpedantic -Werror -Wconversion -Wsign-conversion -Wshadow -Wold-style-cast`, and separately with exceptions and RTTI disabled.
+- The firmware compiles and links for the ESP32-C3, with the shared module in the image.
 
 What is **not** true yet, and will not be claimed until it is:
 
-- **Nothing has run on an Xteink X4. No firmware, no integration, not once.**
-- **No refresh-latency or power-draw measurements exist.** Every statement in this repo about achievable WPM is arithmetic, not observation. `TimingConfig::minHoldMs` currently defaults to 0 because nobody has measured what it should be.
-- There is no simulator, so nobody has *watched* this render a word.
-- EPUB, HTML, and PDF ingest are not implemented — only plain text and Markdown.
-- Markdown handling is a deliberately minimal line-oriented stripper, not a real parser. It handles headings, lists, blockquotes, emphasis, inline code, links, images, fenced code, and rules; anything more exotic passes through as text.
+- **No reader has ever displayed a book.** The firmware builds and its reading loop is tested on a host, but nothing has been flashed since it was written — no panel, no card, no button press has been observed. Everything is verified except the thing itself.
+- **Power draw is still unmeasured.** The bench ran on USB power, so the battery numbers in its output mean nothing. Sustained-refresh cost on a 650 mAh cell is the last open risk.
+- **Ghosting is unquantified.** The simulator counts partial updates between full refreshes and the reader now bounds that number, but "how ghosted is too ghosted" has been assessed by eye, on one panel, once.
+- The panel model is a fit to six measured band heights, not a simulation of the controller. It reproduces timing, not waveforms, and it does not model ghosting as anything but a count.
+- HTML and PDF ingest are not implemented. EPUB is a separate host-side step rather than something `rsvp-mk` accepts directly.
+- Markdown handling is a deliberately minimal line-oriented stripper, not a real parser. It handles headings, lists, blockquotes, emphasis, inline code, links, images, fenced code, rules, and table delimiter rows; anything more exotic passes through as text.
 
 ## Prior art and license hygiene
 

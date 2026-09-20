@@ -1,0 +1,48 @@
+# ABOUTME: CI for the inkflow subdirectory -- builds rsvp-core and the host tools,
+# ABOUTME: then runs the ctest suite. Device firmware needs PlatformIO and is not built.
+
+name: inkflow CI
+
+# inkflow is one subdirectory of a dotfiles repo, so the path filter keeps unrelated
+# dotfiles commits from spending runner minutes on a C++ build.
+on:
+  push:
+    paths:
+      - 'inkflow/**'
+      - '.github/workflows/ci.yml'
+  pull_request:
+    paths:
+      - 'inkflow/**'
+      - '.github/workflows/ci.yml'
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: inkflow
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The simulator links -lz for PNG output. Installed unconditionally so the job
+      # is already correct on the commit that first makes sim a cmake target.
+      - name: Install zlib headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zlib1g-dev
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build
+        run: cmake --build build --parallel "$(nproc)"
+
+      # rsvp-core's "usable on bare metal" claim is enforced by compiling the same
+      # sources with -fno-exceptions -fno-rtti, not asserted in prose. Naming the
+      # target here means deleting it fails CI instead of passing quietly.
+      - name: Check freestanding target builds
+        run: cmake --build build --target rsvp_core_freestanding
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure

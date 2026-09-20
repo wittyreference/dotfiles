@@ -31,8 +31,13 @@ public:
     /// input, leaving `out` untouched.
     bool next(Token& out) noexcept;
 
-    /// Byte offset of the next unconsumed character. Lets a caller resume
-    /// tokenizing a later buffer without re-scanning what it already emitted.
+    /// Byte offset of the next unconsumed character, relative to the buffer this
+    /// tokenizer was constructed over. Reports how much of that buffer has been
+    /// consumed -- trailing whitespace a failing `next` scanned past included.
+    ///
+    /// Not a streaming cursor. `Token::offset` is relative to the same buffer, so
+    /// a caller feeding successive buffers gets offsets that restart at zero in
+    /// each one; rebasing them against the whole file is the caller's job.
     std::size_t position() const noexcept { return pos_; }
 
 private:

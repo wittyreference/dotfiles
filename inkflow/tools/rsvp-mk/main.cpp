@@ -3,13 +3,16 @@
 
 #include "convert.hpp"
 
+#include "rsvp/chunker.hpp"
 #include "rsvp/format.hpp"
 #include "rsvp/player.hpp"
 
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <string>
+#include <system_error>
 #include <vector>
 
 namespace {
@@ -74,6 +77,16 @@ std::string defaultOutputPath(const std::string& input) {
     const bool hasExtension =
         dot != std::string::npos && (slash == std::string::npos || dot > slash);
     return (hasExtension ? input.substr(0u, dot) : input) + ".rsvp";
+}
+
+/// True when the two paths name the same file on disk, however each was spelled.
+/// Identity, not text: `book.rsvp` and `./book.rsvp` are one file, and the output is
+/// opened for truncation, so a mismatch here costs the user their source.
+bool isSameFile(const std::string& a, const std::string& b) {
+    // The non-throwing overload reports a nonexistent path as an error and answers
+    // false, which is the wanted answer: a file that is not there cannot be the input.
+    std::error_code ec;
+    return std::filesystem::equivalent(a, b, ec);
 }
 
 bool looksLikeMarkdown(const std::string& path) {
@@ -152,6 +165,14 @@ int main(int argc, char** argv) {
     if (outputPath.empty()) {
         outputPath = defaultOutputPath(inputPath);
     }
+    // The default output path replaces the extension, so `rsvp-mk book.rsvp` resolves
+    // to the file it just read. Writing truncates, so the source would be gone.
+    if (isSameFile(inputPath, outputPath)) {
+        std::fprintf(stderr, "rsvp-mk: %s would overwrite the input; pass -o to name a\n"
+                             "         different output file\n",
+                     outputPath.c_str());
+        return 2;
+    }
     if (!writeFile(outputPath.c_str(), file)) {
         std::fprintf(stderr, "rsvp-mk: cannot write %s\n", outputPath.c_str());
         return 1;
@@ -171,11 +192,13 @@ int main(int argc, char** argv) {
     config.wpm = wpm;
     config.rampTokens = 0u;
 
+    // Estimated with chunking, because the device shows several words per display
+    // update. Summing per-token holds overstates a five-hour book as fifteen.
     const rsvp::Token* tokens = rsvp::rsvpTokens(file.data(), header);
     std::uint32_t totalMs = 0u;
     if (tokens != nullptr) {
-        rsvp::Player player(tokens, header.tokenCount, config);
-        totalMs = player.remainingMs();
+        totalMs = rsvp::chunkedDurationMs(tokens, header.tokenCount, config,
+                                          rsvp::ChunkConfig{});
     }
 
     std::printf("%s -> %s\n", inputPath, outputPath.c_str());
@@ -185,7 +208,8 @@ int main(int argc, char** argv) {
     if (stripMarkdown) {
         std::printf("  markdown  stripped\n");
     }
-    std::printf("  at %u wpm  %um %02us\n", wpm, totalMs / 60000u, (totalMs / 1000u) % 60u);
+    std::printf("  at %u wpm  %uh %02um  (3 words per update)\n", wpm, totalMs / 3600000u,
+                (totalMs / 60000u) % 60u);
 
     return 0;
 }

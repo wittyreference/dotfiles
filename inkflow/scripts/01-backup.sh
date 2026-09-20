@@ -32,19 +32,31 @@ STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 IMAGE="$OUT_DIR/x4-stock-golden-$STAMP.bin"
 MANIFEST="$OUT_DIR/backup-$STAMP.md"
 
-command -v esptool >/dev/null 2>&1 || {
-    echo "esptool not installed.  pipx install esptool"
+# setup-host.sh installs esptool into a venv under ~/.inkflow-tools and deliberately
+# leaves it off PATH, so `command -v esptool` finds nothing on a correctly set up
+# machine. Honour an explicit override first, then that venv, then PATH.
+ESP_BIN_DIR="$HOME/.inkflow-tools/esp/bin"
+ESPTOOL="${ESPTOOL:-}"
+[ -n "$ESPTOOL" ] || [ ! -x "$ESP_BIN_DIR/esptool" ] || ESPTOOL="$ESP_BIN_DIR/esptool"
+[ -n "$ESPTOOL" ] || ESPTOOL="$(command -v esptool 2>/dev/null || true)"
+[ -n "$ESPTOOL" ] || {
+    echo "esptool not found. Looked for \$ESPTOOL, then $ESP_BIN_DIR/esptool, then PATH."
+    echo "Install it with:  ./scripts/setup-host.sh"
     exit 4
 }
 
-PORT="${PORT:-$(ls /dev/cu.usbmodem* 2>/dev/null | head -1)}"
-[ -n "$PORT" ] || { echo "No /dev/cu.usbmodem* found. Run ./scripts/00-probe.sh first."; exit 3; }
+# Same candidate set as 00-probe.sh: a board with a USB-UART bridge appears as
+# cu.usbserial*, cu.wchusbserial* or cu.SLAB_* rather than cu.usbmodem*, and a port
+# the probe can find must not be invisible here.
+PORT="${PORT:-$(ls /dev/cu.* 2>/dev/null | grep -viE 'bluetooth|debug-console' \
+    | grep -iE 'usbmodem|usbserial|wchusbserial|slab' | head -1)}"
+[ -n "$PORT" ] || { echo "No serial port found. Run ./scripts/00-probe.sh first."; exit 3; }
 
 cat <<MSG
 Golden flash backup
   port:   $PORT
   output: $IMAGE
-  size:   16 MB, roughly 25 minutes
+  size:   16 MB, about a minute at 460800 baud over native USB
 
 This only reads from the device. Leave it plugged in and don't let the Mac sleep.
 
@@ -55,13 +67,19 @@ case "$reply" in [yY]*) ;; *) echo "Aborted."; exit 1 ;; esac
 
 START="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-# esptool v5 spells this `read-flash`, v4 spells it `read_flash`. Try the modern form
-# and fall back only if it actually failed -- getting this wrong would run a
-# 25-minute dump twice.
-if ! esptool --chip esp32c3 --port "$PORT" --baud 460800 read-flash 0 0x1000000 "$IMAGE"; then
+# esptool v5 spells this `read-flash` and its option values with hyphens; v4 used
+# underscores for both. Try the modern form and fall back only if it actually failed --
+# getting this wrong would run the dump twice.
+#
+# --after no-reset keeps the chip in the bootloader. The stock firmware drops
+# USB-Serial/JTAG once it boots, so ending on a hard reset takes the connection away
+# and costs a power-cycle before anything else can be run.
+if ! "$ESPTOOL" --chip esp32c3 --port "$PORT" --baud 460800 --after no-reset \
+        read-flash 0 0x1000000 "$IMAGE"; then
     echo
     echo "read-flash failed; retrying with the older read_flash spelling..."
-    esptool --chip esp32c3 --port "$PORT" --baud 460800 read_flash 0 0x1000000 "$IMAGE"
+    "$ESPTOOL" --chip esp32c3 --port "$PORT" --baud 460800 --after no_reset \
+        read_flash 0 0x1000000 "$IMAGE"
 fi
 
 END="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -89,7 +107,7 @@ sha256:  $SHA
 port:    $PORT
 started: $START
 ended:   $END
-esptool: $(esptool version 2>&1 | head -1)
+esptool: $("$ESPTOOL" version 2>&1 | head -1)
 \`\`\`
 
 The image itself is gitignored -- 16 MB of device-specific firmware does not belong
@@ -98,8 +116,15 @@ in the repository. This manifest is committed so the checksum survives.
 ## Restore
 
 \`\`\`sh
-esptool --chip esp32c3 --port $PORT --baud 460800 write-flash 0x0 $(basename "$IMAGE")
-esptool --chip esp32c3 --port $PORT verify-flash 0x0 $(basename "$IMAGE")
+./scripts/03-restore.sh $(basename "$IMAGE")
+\`\`\`
+
+That checks the image against its \`.sha256\` sidecar before it writes anything. The
+equivalent by hand, if the script is unavailable:
+
+\`\`\`sh
+esptool --chip esp32c3 --port $PORT --baud 460800 --after no-reset write-flash 0x0 $(basename "$IMAGE")
+esptool --chip esp32c3 --port $PORT --after no-reset verify-flash 0x0 $(basename "$IMAGE")
 \`\`\`
 EOF
 

@@ -10,6 +10,26 @@
 
 namespace rsvp {
 
+/// Median latency of a 120px windowed partial update on an Xteink X4.
+///
+/// Measured, not estimated: SSD1677 driving a GDEQ0426T82, 2026-09-18, 12 samples per
+/// configuration with the first two discarded as warm-up. Raw data in
+/// `hardware-notes/eink-bench-20260918.csv`.
+///
+/// The striking part of that run is how little the window size matters. A 40px band
+/// took 524 ms and a full-screen 800px partial took 704 ms -- a 20x area difference for
+/// 34% more time -- because the panel's partial waveform is a fixed ~501 ms and only
+/// the SPI transfer scales. Shrinking the update region is therefore not the lever it
+/// was assumed to be; chunk size is.
+constexpr std::uint16_t kPanelPartialRefreshMs = 542u;
+
+/// Median latency of a full refresh on the same panel, same run.
+///
+/// Roughly 3.6x a partial. Far too slow to advance a word, so full refreshes exist only
+/// to clear accumulated ghosting, and belong at sentence or paragraph pauses where the
+/// timing model already inserts a beat.
+constexpr std::uint16_t kPanelFullRefreshMs = 1958u;
+
 /// Tunable parameters for the timing model.
 ///
 /// Everything is integer and expressed in percent rather than floating point.
@@ -21,12 +41,14 @@ struct TimingConfig {
 
     /// Floor on any single hold, in milliseconds.
     ///
-    /// This is the e-ink constraint, and the reason this field exists at all. The
-    /// panel physically cannot redraw faster than some latency, so scheduling a
-    /// token for less than that just drops frames. Set from measured hardware
-    /// numbers, not guessed -- see bench/eink-bench. Zero disables the floor,
-    /// which is what the desktop simulator and the unit tests use.
-    std::uint16_t minHoldMs = 0u;
+    /// This is the e-ink constraint, and the reason this field exists at all. The panel
+    /// physically cannot redraw faster than its waveform allows, so scheduling a token
+    /// for less than that just drops frames.
+    ///
+    /// Defaults to the measured panel latency rather than zero, because a default of
+    /// zero silently models a device that does not exist. Zero remains available and
+    /// meaningful -- the desktop simulator and most unit tests set it explicitly.
+    std::uint16_t minHoldMs = kPanelPartialRefreshMs;
 
     /// Ceiling on any single hold. Stops a mis-set speed or a stray flag from
     /// looking like the device has locked up.
