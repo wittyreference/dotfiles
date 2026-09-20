@@ -46,3 +46,29 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+  # The firmware is the one part of the tree that no test exercises and, until this job
+  # existed, no machine but the author's laptop ever compiled. transfer.h alone is 167
+  # lines of WiFi, HTTP and streaming upload with zero coverage. A type check on every
+  # push is not a test, but it is the difference between unverified and unverifiable.
+  #
+  # Ubuntu runners are x86_64, so espressif32's RISC-V toolchain is native here. On Apple
+  # silicon it needs Rosetta -- see docs/STATUS.md.
+  firmware:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install PlatformIO
+        run: pip install platformio
+
+      - name: Build the reader firmware
+        run: pio run -d inkflow/firmware/reader
+
+      - name: Build the measurement firmware
+        run: pio run -d inkflow/bench/eink-bench

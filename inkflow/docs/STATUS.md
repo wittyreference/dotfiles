@@ -62,7 +62,7 @@ Partition table read out of the backup is byte-for-byte identical to
 `crosspoint-reader/partitions.csv`. `app0` is at `0x10000`, and `otadata` says the device
 boots from it.
 
-## Four things that will waste a session if unknown
+## Five things that will waste a session if unknown
 
 **1. Always pass `--after no-reset` to esptool.** The stock firmware does not keep
 USB-Serial/JTAG alive once it boots, so any command ending in `Hard resetting via RTS pin`
@@ -83,6 +83,27 @@ statement, and the engine will not compile.
 Its constructor runs before `setup()` and before `Serial.begin`, and the result is a hang
 with no serial output and no display — indistinguishable from dead hardware. It cost most
 of an evening. `transfer.h` constructs it lazily in `begin()`.
+
+**5. Two host toolchain traps on this Mac, both from the macOS 27 upgrade.**
+
+The Command Line Tools now ship `MacOSX27.0.sdk`, whose `libSystem.tbd` and `libc++.tbd`
+name architectures (`arm64e.x1`) the installed Apple clang 17 does not know. Every CMake
+configure dies in `Check for working CXX compiler` with `tapi error: malformed file`.
+Point at the Xcode SDK instead:
+
+```sh
+cmake -B build -DCMAKE_BUILD_TYPE=Debug \
+  -DCMAKE_OSX_SYSROOT=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.sdk
+```
+
+And `pio run` dies with `riscv32-esp-elf-g++: Bad CPU type in executable`. The RISC-V
+toolchain espressif32 pins for the Arduino framework is an x86_64 binary; the registry
+advertises a `darwin_arm64` package for it but serves the x86_64 one, so it needs Rosetta:
+`softwareupdate --install-rosetta --agree-to-license`. There is no native arm64 build of
+that toolchain to switch to — the arm64 `toolchain-riscv32-esp@15.2.0` exists but
+`platform.py` selects it only for pure ESP-IDF projects, never for `framework = arduino`.
+CI compiles the firmware on an x86_64 Ubuntu runner, so this is a flashing convenience
+rather than a gate on firmware changes.
 
 ## What exists
 
