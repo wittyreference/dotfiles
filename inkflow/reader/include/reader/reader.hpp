@@ -105,6 +105,13 @@ public:
     /// shows, and on the first draw.
     void renderFull();
 
+    /// Draws the screen the device shows while switched off.
+    ///
+    /// E-paper holds its image with no power, so an off device shows whatever was drawn
+    /// last -- which makes "off" and "paused mid-sentence" look identical. This is the one
+    /// screen whose job is to be unmistakable at a glance.
+    void renderSleep();
+
     /// Presents the next chunk and advances past it.
     ///
     /// Returns false at the end of the document, having drawn nothing. The caller owns
@@ -124,12 +131,14 @@ private:
     void drawStatus(Surface& s) const;
     void drawGuides(Surface& s) const;
     void drawContext(Surface& s) const;
+    void drawSleep(Surface& s) const;
     void drawChunk(Surface& s, const Frame& frame) const;
 
     // Painters are nested so a frame's contents can be redrawn on demand: GxEPD2 walks
     // the framebuffer in pages and calls back once per page.
     class FullPainter;
     class BandPainter;
+    class SleepPainter;
 
     Document& doc_;
     Surface& surface_;
