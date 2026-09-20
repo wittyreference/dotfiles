@@ -110,10 +110,33 @@ screen as a full refresh, arm the power pin as a wake source, sleep. The USB por
 disappearing from the host is the deep sleep itself — the device is off, and e-paper holds
 the last image with no power, which is the entire reason the sleep screen exists.
 
+The screen itself was confirmed by eye, which is the only way it could be: the serial log
+proves `renderSleep()` ran, not that what it drew is legible. The wordmark sits on the
+focal column with the guide ticks still standing either side of it, the full-width rule is
+below, and under that the document name with its percentage and `off - hold power to wake`.
+Unmistakably a device that has been switched off, rather than one showing three words and
+no indication whether it is waiting or dead — which is the whole point of drawing it.
+
 Worth noting what this is: `Reader::renderSleep()` was written, reviewed and committed
 with nothing calling it — `enterDeepSleep()` drew `renderFull()` instead, and the commit
 message said so. It was wired up and given tests this week. This is the first time either
 the button or the screen has run on hardware, and both worked on the first attempt.
+
+And it wakes. Holding power again brings the device back through `setup()` — a deep-sleep
+wake is a reset — and the sixth bring-up line reads:
+
+```
+inkflow: agents.rsvp, 98633 tokens, streamed, resume at 826
+```
+
+It slept at 817 and resumed at 826: the last 16-token boundary the position saver crossed.
+That is the NVS write-endurance tradeoff behaving exactly as specified — the position is
+persisted every sixteen tokens rather than every one, so a power loss costs at most a few
+seconds of reading and never more. Nine tokens is about two seconds at the pace measured
+above.
+
+The whole round trip is proven: read, hold power, position saved, sleep screen drawn, deep
+sleep, hold power, wake, resume.
 
 ## What is still unproven
 
