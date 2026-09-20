@@ -421,3 +421,103 @@ TEST_CASE("slowing down actually slows the reader down") {
     // Halving the requested speed must produce a materially slower delivered pace.
     CHECK(slow < fast * 70u / 100u);
 }
+
+TEST_CASE("the sleep screen is unmistakable, and leaves a clean image behind") {
+    // E-paper holds its image with no power, so an off device shows whatever was drawn
+    // last. Without a screen of its own, "off" and "paused mid-sentence" are the same
+    // picture, and a reader who finds their device showing three words has no way to know
+    // whether it is waiting for them or dead.
+    sim::Panel panel(reader::kLandscape);
+    reader::Document doc = makeDocument();
+    reader::Reader r(doc, panel, reader::kLandscape);
+    r.setTiming(timingAt(330));
+    r.setPlaying(true);
+
+    // Accrue some ghosting first, and get far enough in that the progress figure is not
+    // zero -- both are things the sleep screen has to deal with rather than ignore.
+    r.renderFull();
+    reader::Frame frame{};
+    for (int i = 0; i < 12; ++i) {
+        REQUIRE(r.step(frame));
+    }
+    REQUIRE(panel.ghost() > 0u);
+    REQUIRE(r.index() > 0u);
+
+    const uint32_t fullsBefore = panel.fullRefreshes();
+    r.renderSleep();
+
+    // A full refresh, so the retained image is clean rather than however much ghosting
+    // had accumulated by the time the reader pressed power.
+    CHECK(panel.fullRefreshes() == fullsBefore + 1u);
+    CHECK(panel.ghost() == 0u);
+
+    const int mid = reader::kLandscape.bandY + reader::kChunkBaseline;
+
+    // The guide ticks still stand on the focal column, so an off device looks like itself
+    // rather than like a crash.
+    CHECK(panel.canvas().pixel(reader::kLandscape.focalX, mid - 70) == sim::kBlack);
+    CHECK(panel.canvas().pixel(reader::kLandscape.focalX, mid + 34) == sim::kBlack);
+
+    // A rule running nearly the full width of the panel: nothing a half-finished refresh
+    // would ever leave behind. Black at both ends, and the margins left white so it reads
+    // as a drawn line rather than as a smear.
+    const int ruleY = mid + 72;
+    CHECK(panel.canvas().pixel(61, ruleY) == sim::kBlack);
+    CHECK(panel.canvas().pixel(reader::kLandscape.width - 62, ruleY) == sim::kBlack);
+    CHECK(panel.canvas().pixel(10, ruleY) == sim::kWhite);
+    CHECK(panel.canvas().pixel(reader::kLandscape.width - 11, ruleY) == sim::kWhite);
+}
+
+TEST_CASE("the sleep screen shows how far through the reader got") {
+    // The progress figure is the one piece of state worth retaining on a screen nobody is
+    // looking at: it is what tells you which of two devices on the table is the one you
+    // were part-way through.
+    auto sleepRow = [](uint32_t steps) {
+        sim::Panel panel(reader::kLandscape);
+        reader::Document doc = makeDocument();
+        reader::Reader r(doc, panel, reader::kLandscape);
+        r.setTiming(timingAt(330));
+        r.setPlaying(true);
+        reader::Frame frame{};
+        for (uint32_t i = 0; i < steps; ++i) {
+            REQUIRE(r.step(frame));
+        }
+        r.renderSleep();
+
+        // Count the ink on the status line rather than read it: the test is that the
+        // figure changes with position, not what typeface it is set in.
+        const int y = reader::kLandscape.bandY + reader::kChunkBaseline + 72 + 44;
+        int ink = 0;
+        for (int dy = -24; dy <= 4; ++dy) {
+            for (int x = 0; x < reader::kLandscape.width; ++x) {
+                if (panel.canvas().pixel(x, y + dy) == sim::kBlack) {
+                    ++ink;
+                }
+            }
+        }
+        return ink;
+    };
+
+    const int early = sleepRow(1);
+    const int late = sleepRow(20);
+    CHECK(early > 0);
+    CHECK(late > 0);
+    CHECK(early != late);
+}
+
+TEST_CASE("the sleep screen survives a document name longer than its buffer") {
+    // setName takes 64 bytes and the sleep line formats into 96 with a percentage after
+    // it. A name that fills its own buffer must truncate rather than run off the end of
+    // the line buffer -- the failure mode being a stack smash on a device with no
+    // debugger attached.
+    sim::Panel panel(reader::kLandscape);
+    reader::Document doc = makeDocument();
+    reader::Reader r(doc, panel, reader::kLandscape);
+    r.setTiming(timingAt(330));
+
+    const std::string huge(200, 'x');
+    r.setName(huge.c_str());
+    r.renderSleep();
+
+    CHECK(panel.fullRefreshes() == 1u);
+}
