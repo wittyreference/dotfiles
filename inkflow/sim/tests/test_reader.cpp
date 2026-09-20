@@ -9,6 +9,7 @@
 #include "rsvp/timing.hpp"
 
 #include <cstring>
+#include <initializer_list>
 #include <string>
 
 namespace {

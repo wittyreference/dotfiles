@@ -5,6 +5,8 @@
 
 #include "bench/samples.hpp"
 
+#include <initializer_list>
+
 TEST_CASE("an empty accumulator reports zero for everything") {
     bench::Samples<8> s;
     CHECK(s.count() == 0u);
