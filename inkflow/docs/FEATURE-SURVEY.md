@@ -160,11 +160,81 @@ Two notes. `Crosspoint-Emulator`'s value to us is purely that **its existence pr
 
 `ngxson/pluspoint-reader` (NOASSERTION) · `uxjulia/crossink-fonts` and `uxjulia/crossink-dictionaries` (both no license) · the CrossInk forks below
 
-### Correction: the CrossInk situation
+### The refusal upstream, and why it is the best evidence this project has
+
+**CrossPoint was asked for RSVP and turned it down as physically impossible.**
+[Issue #3304](https://github.com/crosspoint-reader/crosspoint-reader/issues/3304), *"NEW
+FEATURE: Copy Readrrr App for Fast Reading"*, closed **Not Planned** on 2026-08-31. The
+request is exactly this project: *"single words show up on the screen and you can select
+the reading speed."* The reasoning given:
+
+> Readrrr use the RSVP reading method, which show 200-500 words per minute on the screen.
+> **It's simply impossible to do so with e-ink screen. the refresh rate is a bit above one
+> frame per second.**
+
+That is wrong, and this repository holds the measurements that say so:
+
+| the claim | measured here |
+|---|---|
+| "refresh rate is a bit above one frame per second" | **501 ms** per partial update — about two per second. 303 observations on hardware, spread of 3 µs |
+| RSVP is impossible on e-ink | **234–263 WPM delivered**, on a real book, on the device — inside the 250–350 band the comprehension literature supports |
+
+The error is the one this project's own `REFRESH-MEASUREMENTS.md` was written to avoid:
+reasoning about **one word per refresh**. At one word per 542 ms the ceiling really is
+111 WPM and the objection holds. Chunking three words per update is the whole move, and it
+is why the chunker exists. Nobody upstream appears to have tried it.
+
+Worth being precise about what this does and does not mean. It does not mean the
+maintainers were careless — it is a reasonable inference from a real constraint, made
+without the bench data. It does mean the feature is unclaimed for a falsifiable reason
+rather than a matter of taste, which is the most useful kind of gap to find.
+
+**It also changes the distribution plan.** `SCOPE.md` does not exclude RSVP categorically
+— the named exclusions are interactive apps, authoring tools, active connectivity and PDF
+— so the refusal was factual, not policy. But it also says: *"Is another popular CrossPoint
+fork already solving this well? If yes, we generally defer to that fork."* Upstream's own
+rule points at a fork rather than a PR, and the ecosystem has an obvious channel for one
+(see below). The README's "intended destination is an upstream pull request" should be
+read as one option now, not the plan.
+
+### readme.club — the distribution channel this survey missed
+
+[readme.club](https://www.readme.club/) is an independent community hub for e-ink devices
+— news, wallpapers, setup guides, and **40+ alternative firmwares** across Xteink, EEGO,
+Boox, Supernote, Viwoods and PocketBook. It is where an X4 owner actually goes to find
+firmware, and it is how [CrossInk is
+distributed](https://www.readme.club/firmware/crossink).
+
+This survey did not cite it and should have. Every firmware it catalogued was found
+through GitHub, which is where the source lives and not where the users are. That is a
+real gap in the research rather than a footnote: a project whose plan is "get this in front
+of X4 owners" needs to know the place X4 owners look.
+
+### Correction to the correction: CrossInk does exist
 
 An earlier draft of this survey described CrossInk as "~648 stars, one of the most popular alternative firmwares." **That was wrong and I'm striking it.** The figure came from a secondary source this project had already flagged as possibly AI-generated, plus an HN comment that gave a conflicting repo path. I propagated it without checking.
 
-What's actually verifiable: **`uxjulia/CrossInk` does not exist as a public repository.** Searching every repo named `crossink` on GitHub returns ten results, none of them the upstream firmware. What survives is a ring of satellites and third-party forks — `samfoy/CrossInk` describes itself as a *"Standalone fork of uxjulia/CrossInk"*, alongside `at689/CrossInked`, `alpzoloto-sudo/Crossink`, `ProfessorRGB/ChromadyneCrossink`, `Sparkadium/crossink-almanac`, `MimiGapa/crossink-stats-forge` — all created June–July 2026, all at 0 stars.
+That striking was right. What replaced it was not.
+
+**`uxjulia/CrossInk` does exist** — 1,603 stars, actively pushed, and still carrying **no
+licence**. It is a personal fork of CrossPoint focused on typography (Bitter, ChareInk,
+Lexend Deca) and minimal reading statistics, currently v1.4.0.1, and it is distributed
+through readme.club rather than advertised on GitHub. It does **not** do RSVP.
+
+The earlier draft below concluded the opposite, and the reasoning is left standing because
+the way it went wrong is instructive: a GitHub search for repos *named* `crossink` returned
+only satellites, and absence of a search hit was read as evidence of deletion. It was not.
+A negative result from one channel is not a finding, which is the same mistake as trusting
+the star count it was correcting.
+
+The licence conclusion survives intact and is what actually governs use: no licence means
+studied for behaviour and reimplemented, never copied.
+
+---
+
+*The superseded draft:*
+
+Searching every repo named `crossink` on GitHub returns ten results, none of them the upstream firmware. What survives is a ring of satellites and third-party forks — `samfoy/CrossInk` describes itself as a *"Standalone fork of uxjulia/CrossInk"*, alongside `at689/CrossInked`, `alpzoloto-sudo/Crossink`, `ProfessorRGB/ChromadyneCrossink`, `Sparkadium/crossink-almanac`, `MimiGapa/crossink-stats-forge` — all created June–July 2026, all at 0 stars.
 
 The most likely reading is that the upstream repo was deleted or made private recently and the forks outlived it. Either way, **there is no CrossInk repo to study, no star count to cite, and no license to resolve.** The Bionic Reading angle is still the closest prior art conceptually, and `uxjulia` is still worth talking to — but through the surviving forks or directly, not through a repo that isn't there.
 
