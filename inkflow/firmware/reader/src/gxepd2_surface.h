@@ -3,8 +3,14 @@
 
 #pragma once
 
+// The reading face is sans-bold, not the mono-bold this started with, and the reason is
+// the inverted pivot. Measured across every 18pt face Adafruit ships: FreeMonoBold is the
+// only non-italic one whose glyph ink exceeds its own advance box -- 23px of ink in a 21px
+// advance -- so letters overhang each other and a box drawn around one of them cannot
+// avoid its neighbours. FreeSansBold has zero overhang, is 17% narrower so chunks have
+// more room, and stays bold enough for a 1-bit panel with no antialiasing to lean on.
 #include <Fonts/FreeMonoBold12pt7b.h>
-#include <Fonts/FreeMonoBold18pt7b.h>
+#include <Fonts/FreeSansBold18pt7b.h>
 #include <GxEPD2_BW.h>
 
 #include "reader/surface.hpp"
@@ -104,7 +110,7 @@ private:
     }
 
     static const GFXfont* fontFor(reader::Font font) {
-        return font == reader::Font::kChunk ? &FreeMonoBold18pt7b : &FreeMonoBold12pt7b;
+        return font == reader::Font::kChunk ? &FreeSansBold18pt7b : &FreeMonoBold12pt7b;
     }
 
     Display& display_;

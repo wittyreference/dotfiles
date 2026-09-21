@@ -40,11 +40,17 @@ struct Layout {
 /// all. See `kPortrait` for why that decides the orientation.
 inline constexpr Layout kLandscape{800, 480, 180, 120, 300};
 
-/// Portrait, which does not fit and is not shipped.
+/// Portrait. Not shipped, and no longer impossible.
 ///
-/// Kept because the simulator's overflow test asserts that it still overflows. At 480px
-/// wide the budget right of the focal column is 290px for text that needs about 400, and
-/// chunks overran the right edge by 88px. Deleting this would delete the evidence.
+/// It was abandoned on measurement: at 480px wide the budget right of the focal column is
+/// 290px, against text that needed about 400, and chunks overran the right edge by 88px.
+/// That was with FreeMonoBold and a chunker that counted characters. With FreeSansBold and
+/// chunks that give words back until they fit, the same document plays through portrait
+/// with no overflow at 258 wpm, against 263 in landscape.
+///
+/// Still not shipped -- the device is held landscape and nothing asks for the other -- but
+/// it is now a choice rather than a constraint, and the pipeline test asserts it keeps
+/// working so that stays true.
 inline constexpr Layout kPortrait{480, 800, 330, 120, 190};
 
 /// Baseline of the chunk text, measured down from the top of the band.

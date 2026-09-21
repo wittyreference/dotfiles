@@ -40,10 +40,17 @@ fi
 "$SIM" "$WORK/book.rsvp" "$WORK" 0 --no-png > "$WORK/landscape.log" 2>&1
 check "landscape layout fits the whole document" "$?" "0"
 
-# And the rejected one must still not fit. Without this the landscape pass proves only
-# that the check is lenient, not that it works.
+# Portrait used to be asserted to *fail* here, as evidence that shipping landscape was
+# forced rather than chosen. That stopped being true when the reading face moved from
+# FreeMonoBold to FreeSansBold and chunking became width-aware: a narrower font and a
+# chunk that gives words back until it fits mean the 290px budget right of the portrait
+# focal column is now workable. Measured, not assumed -- 258 wpm against landscape's 263,
+# and no overflow across the whole document.
+#
+# So the assertion is inverted rather than deleted. Portrait is a layout this reader can
+# now present, and a change that breaks it again should say so.
 "$SIM" "$WORK/book.rsvp" "$WORK" 0 --portrait --no-png > "$WORK/portrait.log" 2>&1
-check "portrait layout still overflows" "$?" "1"
+check "portrait layout also fits now" "$?" "0"
 
 # Ghosting must actually clear. The flush needs both a partial count and a paragraph
 # boundary, so a document with long paragraph-free stretches can starve it indefinitely.

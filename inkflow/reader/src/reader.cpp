@@ -149,23 +149,86 @@ uint32_t Reader::buildChunk(uint32_t start, Frame& out) const {
         return 0;
     }
 
-    const uint32_t n = rsvp::chunkLength(window, have, 0u, chunking_);
-    size_t len = 0;
-    for (uint32_t i = 0; i < n; ++i) {
-        if (i > 0 && len + 1 < sizeof(out.text)) {
-            out.text[len++] = ' ';
-        }
-        char word[64];
-        const size_t got = doc_.text(window[i].offset, window[i].length, word, sizeof(word));
-        for (size_t b = 0; b < got && len + 1 < sizeof(out.text); ++b) {
-            out.text[len++] = word[b];
-        }
-    }
-    out.text[len] = '\0';
-    out.tokens = n;
+    // How many words the engine would like to show together. That decision is made on
+    // character counts, because the chunker lives in core/ where there are no fonts and
+    // no screen -- which is the right boundary, and a count is only a proxy for width.
+    //
+    // It was an honest proxy while the face was monospace. It is not one now: twenty
+    // narrow characters and twenty wide ones differ by a third of the panel. So the
+    // count is a starting point, and the chunk gives words back until it fits.
+    // How many words the engine would like to show together. That decision is made on
+    // character counts, because the chunker lives in core/ where there are no fonts and
+    // no screen -- which is the right boundary, and a count is only a proxy for width.
+    //
+    // It was an honest proxy while the face was monospace. It is not one now: twenty
+    // narrow characters and twenty wide ones differ by a third of the panel. So the count
+    // is a starting point, and the chunk gives words back until it fits with its pivot on
+    // the focal column -- which is the constraint that matters, not merely fitting on the
+    // screen somewhere.
+    uint32_t n = rsvp::chunkLength(window, have, 0u, chunking_);
 
-    // A chunk is held for the sum of what its tokens need, with the panel's refresh
-    // floor applied once to that total.
+    size_t len = 0;
+    int16_t chunkWidth = 0;
+    int16_t wanted = 0;
+    uint8_t pivotChar = 0;
+    for (;;) {
+        len = 0;
+        for (uint32_t i = 0; i < n; ++i) {
+            if (i > 0 && len + 1 < sizeof(out.text)) {
+                out.text[len++] = ' ';
+            }
+            char word[64];
+            const size_t got =
+                doc_.text(window[i].offset, window[i].length, word, sizeof(word));
+            for (size_t b = 0; b < got && len + 1 < sizeof(out.text); ++b) {
+                out.text[len++] = word[b];
+            }
+        }
+        out.text[len] = '\0';
+        chunkWidth = surface_.textWidth(Font::kChunk, out.text);
+
+        // The pivot belongs to the chunk's first word, which is where the eye lands. The
+        // offset is a reader's own adjustment to that, clamped so it can only ever name a
+        // character position rather than run off either end of the word.
+        int32_t pivot = static_cast<int32_t>(window[0].orp) + pivotOffset_;
+        if (pivot < 0) {
+            pivot = 0;
+        }
+        if (pivot > 255) {
+            pivot = 255;
+        }
+        pivotChar = static_cast<uint8_t>(pivot);
+
+        // Where the chunk wants to be: the pivot character's *ink* centred on the focal
+        // column. Not its advance box -- a glyph sits at an offset inside that box and is
+        // usually narrower than it, so aligning boxes lets the marks wander about a dozen
+        // pixels from word to word. RSVP survives on the eye never having to travel, and
+        // a fixation point that drifts by half a character is one that moves.
+        char pivotOne[8];
+        int16_t inkLeft = 0;
+        int16_t inkWidth = 0;
+        if (pivotCharBytes(out.text, pivotChar, pivotOne, sizeof(pivotOne)) != 0u) {
+            surface_.textInk(Font::kChunk, pivotOne, inkLeft, inkWidth);
+        }
+        const int16_t prefix = prefixWidth(out.text, pivotChar);
+        wanted = static_cast<int16_t>(layout_.focalX - prefix -
+                                      static_cast<int16_t>(inkLeft + inkWidth / 2));
+
+        const bool fits = wanted >= 0 && wanted + chunkWidth <= layout_.width;
+        // A single word that will not fit is a property of the text -- a long URL, a
+        // table rule that survived conversion -- and no amount of giving words back
+        // helps. It is reported as oversize below rather than shrunk away.
+        if (fits || n <= 1u) {
+            break;
+        }
+        --n;
+    }
+
+    out.tokens = n;
+    out.pivot = pivotChar;
+
+    // A chunk is held for the sum of what its tokens need, with the panel's refresh floor
+    // applied once to that total.
     //
     // Not the maximum of the per-token holds: each of those is already floored, so the
     // floor would win every time and the maximum would always be the floor itself. That
@@ -173,38 +236,20 @@ uint32_t Reader::buildChunk(uint32_t start, Frame& out) const {
     // control -- requesting 200 wpm and requesting 400 both deliver about 300.
     out.holdMs = rsvp::chunkHoldMs(window, have, 0u, n, timing_);
 
-    // The pivot belongs to the chunk's first word, which is where the eye lands. The
-    // offset is a reader's own adjustment to that, clamped so it can only ever name a
-    // character position rather than run off either end of the word.
-    int32_t pivot = static_cast<int32_t>(window[0].orp) + pivotOffset_;
-    if (pivot < 0) {
-        pivot = 0;
-    }
-    if (pivot > 255) {
-        pivot = 255;
-    }
-    const uint8_t pivotChar = static_cast<uint8_t>(pivot);
-    out.pivot = pivotChar;
-    const int16_t prefix = prefixWidth(out.text, pivotChar);
-    const int16_t chunkWidth = surface_.textWidth(Font::kChunk, out.text);
-
-    // Where the chunk wants to be: the pivot character's *ink* centred on the focal
-    // column. Not its advance box -- a glyph sits at an offset inside that box and is
-    // usually narrower than it, so aligning boxes lets the marks wander about a dozen
-    // pixels from word to word. RSVP survives on the eye never having to travel, and a
-    // fixation point that drifts by half a character is a fixation point that moves.
-    char pivotOne[8];
-    int16_t inkLeft = 0;
-    int16_t inkWidth = 0;
-    if (pivotCharBytes(out.text, pivotChar, pivotOne, sizeof(pivotOne)) != 0u) {
-        surface_.textInk(Font::kChunk, pivotOne, inkLeft, inkWidth);
-    }
-    const int16_t inkCentre = static_cast<int16_t>(inkLeft + inkWidth / 2);
-
-    // Where the chunk wants to be: pivot character on the focal column.
-    const int16_t wanted = static_cast<int16_t>(layout_.focalX - prefix - inkCentre);
-    out.oversize = chunkWidth > layout_.width;
-    out.overflows = !out.oversize && (wanted < 0 || wanted + chunkWidth > layout_.width);
+    // Two different failures, and only one of them is the layout's.
+    //
+    // A chunk of several words that will not fit has been shrunk until it does, so if one
+    // still cannot be placed it is a single token -- a 41-character file path, a table
+    // rule that survived conversion -- and no geometry helps. That is the text's
+    // property, so it is oversize rather than an overflow, whether or not it happens to
+    // be wider than the whole panel.
+    //
+    // `overflows` keeps its meaning: the geometry is wrong. After the shrink loop it
+    // should not be reachable at all, which is exactly why the simulator still fails the
+    // build on it.
+    const bool fitsPlaced = wanted >= 0 && wanted + chunkWidth <= layout_.width;
+    out.oversize = chunkWidth > layout_.width || (n <= 1u && !fitsPlaced);
+    out.overflows = !out.oversize && !fitsPlaced;
 
     // Keep the text on screen even when the pivot cannot be honoured. A word drawn with
     // its tail cut off is unreadable, whereas a word whose fixation point moved is merely

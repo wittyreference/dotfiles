@@ -102,9 +102,18 @@ TEST_CASE("chunks fit the landscape screen") {
     CHECK(overflows == 0);
 }
 
-TEST_CASE("portrait still overflows, which is why it was abandoned") {
-    // The budget is the width minus the focal column, because a chunk is positioned by
-    // its pivot and extends rightward. 290px of 480 for text that needs about 400.
+TEST_CASE("portrait fits now, on a narrower face and chunks that give words back") {
+    // This asserted the opposite until today, and the opposite was true: the budget is
+    // the width minus the focal column, 290px of 480, against text that needed about 400,
+    // and chunks overran the right edge by 88px. Portrait was abandoned on that number.
+    //
+    // Two changes retired it. FreeSansBold is 17% narrower than the FreeMonoBold it
+    // replaced, and a chunk now gives words back until it fits rather than trusting a
+    // character count that only ever proxied for width. Portrait plays a whole document
+    // with no overflow, at 258 wpm against landscape's 263.
+    //
+    // Still not the shipped layout -- the device is held landscape -- but it is a choice
+    // now rather than a constraint, and this says so if that stops being true.
     sim::Panel panel(reader::kPortrait);
     reader::Document doc = makeDocument();
     reader::Reader r(doc, panel, reader::kPortrait);
@@ -112,13 +121,22 @@ TEST_CASE("portrait still overflows, which is why it was abandoned") {
     r.setPlaying(true);
 
     uint32_t overflows = 0;
+    uint32_t chunks = 0;
+    uint32_t words = 0;
     reader::Frame frame{};
     while (r.step(frame)) {
         if (frame.overflows) {
             ++overflows;
         }
+        ++chunks;
+        words += frame.tokens;
     }
-    CHECK(overflows > 0);
+    CHECK(overflows == 0);
+    REQUIRE(chunks > 0);
+
+    // And it is still chunking rather than crawling one word at a time, which is what
+    // would actually make the layout unusable on a panel with a 542ms refresh floor.
+    CHECK(words * 10u / chunks >= 20u);
 }
 
 TEST_CASE("the pivot lands on the focal column") {
