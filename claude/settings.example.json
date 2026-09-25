@@ -9,11 +9,19 @@
   "skillListingMaxDescChars": 384,
   "skillListingBudgetFraction": 0.01,
   "preferredNotifChannel": "terminal_bell",
-  "voiceEnabled": true,
+  "voice": {
+    "enabled": false
+  },
+  "tui": "fullscreen",
+  "prefersReducedMotion": true,
+  "spinnerTipsEnabled": false,
+  "theme": "custom:nomad",
   "skipDangerousModePermissionPrompt": true,
   "env": {
     "CLAUDE_CODE_PACKAGE_MANAGER_AUTO_UPDATE": "1",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-8"
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-8",
+    "CLAUDE_CODE_DISABLE_MOUSE": "1",
+    "CLAUDE_CLIENT_PRESENCE_FILE": "/run/user/1000/at-nomad"
   },
   "permissions": {
     "allow": [
@@ -23,6 +31,7 @@
   "statusLine": {
     "type": "command",
     "command": "CANONICAL_REPO=$HOME/your-primary-repo ~/.claude/statusline.sh",
-    "padding": 0
+    "padding": 0,
+    "refreshInterval": 60
   }
 }

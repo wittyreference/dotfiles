@@ -54,9 +54,33 @@ Caps each skill description to 384 chars and the total skill-listing system remi
 
 Audible bell on turn completion. For long-running tasks (test suites, multi-file refactors) it's faster than tabbing back to check.
 
-### `"voiceEnabled": true`
+### `"voice": { "enabled": false }`
 
-Enables voice input (push-to-talk via the keybinding in `~/.claude/keybindings.json`). Useful for narrative prompts where typing slows you down.
+Voice input is push-to-talk on a held Space bar, and it needs a claude.ai login plus a local microphone. On a box without a capture device the hold becomes a failing-recording loop that ends in "Voice input is failing repeatedly and has been paused". The older `voiceEnabled` key is deprecated but still honoured, so `desk/install.sh` removes it and writes the explicit off; set `enabled` to true on a machine that actually has a microphone.
+
+### `"tui": "fullscreen"` and `"prefersReducedMotion": true`
+
+Fullscreen rendering keeps the conversation in the terminal's alternate screen, which stops the scrollback jumping while Claude works. Reduced motion matters inside tmux 3.3: tmux cannot do synchronized output, so every animated spinner frame is a full repaint the terminal pays for, visible as flicker on a Raspberry Pi. With motion off the spinner is static and the repaints stop.
+
+### `"spinnerTipsEnabled": false`
+
+The rotating tips under the spinner are onboarding text. After the first week they are noise in the one place the eye rests while waiting.
+
+### `"env": { "CLAUDE_CODE_DISABLE_MOUSE": "1" }`
+
+On a desk with no pointer, mouse capture is dead weight, and it also stops the terminal's own text selection from working. Scrolling stays on PageUp, PageDown, Ctrl+Home and Ctrl+End.
+
+### `"env": { "CLAUDE_CLIENT_PRESENCE_FILE": "/run/user/1000/at-nomad" }`
+
+Claude Code skips phone pushes while this file exists, checking only for existence every few seconds. Tie it to the display: a login autostart creates it, the idle blank removes it, resume and `screen-on` restore it. Pushes then start exactly when the desk goes dark instead of whenever a heuristic guesses you left. `desk/README.md` covers the three pieces that maintain it.
+
+### `"theme": "custom:nomad"`
+
+A custom theme is a JSON lookup table in `~/.claude/themes/`, zero CPU, hot-reloaded on edit. The tokens it controls are the spinner symbol, the input box border and the background behind your own messages, so on a terminal whose text colour already matches the theme accent it looks like nothing happened. `claude/themes/nomad.json` uses mint against a white-text terminal for that reason.
+
+### `"statusLine.refreshInterval": 60`
+
+The ccstatusline wrapper costs about a second of node start per render on a Pi 4. The `block-timer` segment shows whole minutes, so a 60 s tick loses nothing visible and halves the idle cost of a 30 s one.
 
 ### `"skipDangerousModePermissionPrompt": true`
 

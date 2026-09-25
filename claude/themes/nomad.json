@@ -1,0 +1,13 @@
+{
+  "name": "Nomad",
+  "base": "dark",
+  "overrides": {
+    "claude": "#7DFFA9",
+    "claudeShimmer": "#C8FFDD",
+    "promptBorder": "#7DFFA9",
+    "promptBorderShimmer": "#C8FFDD",
+    "success": "#00FF41",
+    "planMode": "#7DFFA9",
+    "userMessageBackground": "#0C1810"
+  }
+}
