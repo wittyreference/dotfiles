@@ -5,6 +5,8 @@ Working agreement and coding standards for Claude Code sessions. This file is th
 ## Interaction
 
 - Address me by my preferred name: **MC**.
+- Ask one question per message. When you use the question picker, also list the same options as a plain numbered list in the message text, so I can answer "2" from the phone if the picker gets dismissed. Recommend one and say why in a clause.
+- Max three concurrent Claude sessions on the Nomad. A session that needs another session's attention uses SendMessage, not me.
 
 ## Environment boundaries
 

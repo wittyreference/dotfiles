@@ -10,6 +10,8 @@ Personal config snapshots for shell, tmux, and Claude Code. Curated for portabil
 | `claude/settings.example.json` | Sanitized `~/.claude/settings.json` — model, thinking, context window, statusline reference |
 | `claude/statusline.sh` | `ccstatusline` wrapper that warns when CWD is outside the canonical work tree |
 | `claude/ccstatusline-lite.json` | Portable 2-line statusline layout (no project-specific custom-command segments) |
+| `claude/themes/nomad.json` | Custom Claude Code theme: mint accents on a dark base, installed by `desk/install.sh` |
+| `desk/` | Keyboard-only Linux desk (tmux, lxterminal, mako, labwc keys, Claude Code settings merge) with an idempotent installer and its test; see `desk/README.md` |
 | `docs/claude-config-rationale.md` | Why each non-default setting is set the way it is |
 | `CLAUDE.md` | Working agreement and coding standards (relationship framing, TDD, comment policy) |
 | `brainstorm.md` / `twilio-brainstorm.md` | Brainstorming prompt templates for new prototypes |
@@ -56,6 +58,18 @@ echo "{\"cwd\":\"$PWD\",\"model\":{\"display_name\":\"Opus\"},\"workspace\":{\"c
 Step 7 prints the ⚠ line until you replace `your-primary-repo` — that *is* the check working.
 Settings reload on save, so step 6 takes effect without restarting Claude. If the line stays blank anyway,
 the folder is probably untrusted — `claude --debug` logs `Status line command skipped: workspace trust not accepted`.
+
+## A keyboard-only Linux desk
+
+For a Wayland box driven from a keyboard with Claude Code in tmux (the Raspberry Pi
+desk), steps 3 to 6 above plus the terminal, tmux, notification and theme config are one
+idempotent script. It merges into `~/.claude/settings.json` rather than replacing it.
+
+```bash
+DRY_RUN=1 ~/dotfiles/desk/install.sh   # preview
+~/dotfiles/desk/install.sh             # install; safe to re-run
+~/dotfiles/desk/tests/test-install.sh  # prove it against a scratch HOME
+```
 
 ## Reading order for a new machine
 
